@@ -1,0 +1,19 @@
+# Stock Configuration for StockMarketAI
+# Define the list of stocks, their data sources, and date ranges
+stocks:
+  AAPL:
+    source: yfinance
+    start_date: '2020-01-01'
+    end_date: '2023-12-31'
+  MSFT:
+    source: yfinance
+    start_date: '2020-01-01'
+    end_date: '2023-12-31'
+  TSLA:
+    source: yfinance
+    start_date: '2020-01-01'
+    end_date: '2023-12-31'
+  GOOGL:
+    source: yfinance
+    start_date: '2020-01-01'
+    end_date: '2023-12-31'

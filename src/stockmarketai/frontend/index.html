@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockMarketAI — Multi-Level AI Trading & Prediction Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Chart.js for interactive equity curves & candlestick/price charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="brand-logo">
+        <span class="logo-icon">▲</span>
+      </div>
+      <div class="brand-text">
+        <h1>StockMarket<span>AI</span></h1>
+        <span class="brand-subtitle">Production ML Inference & Backtesting Engine</span>
+      </div>
+    </div>
+
+      <button id="navAutoTradeBtn" class="nav-toggle-btn safe" title="Master Switch: Click to Toggle Auto-Execution">
+        <span class="toggle-dot"></span>
+        <span id="navAutoTradeText">Auto-Trade: OFF</span>
+      </button>
+      <div class="status-pill" id="systemStatusPill">
+        <span class="status-dot"></span>
+        <span id="systemStatusText">Connecting...</span>
+      </div>
+      <a href="/about" target="_blank" class="nav-link-btn" title="About & Features Guide">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        About & Features
+      </a>
+      <a href="/docs" target="_blank" class="nav-link-btn" title="OpenAPI Swagger Documentation">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        Swagger Docs
+      </a>
+      <a href="/api/v1/health" target="_blank" class="nav-link-btn">API Health</a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- Search & Ticker Bar -->
+    <section class="ticker-header-card">
+      <div class="search-form-row">
+        <div class="search-input-wrapper">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="symbolInput" placeholder="Enter company name or ticker (e.g. SRM Energy, Tata Motors, Apple, Reliance, MSFT)..." value="MSFT" autocomplete="off" />
+          <button id="predictBtn" class="btn-primary">
+            <span class="btn-text">Generate AI Prediction</span>
+            <span class="btn-loader" style="display:none;"></span>
+          </button>
+        </div>
+        <!-- Live Autocomplete Suggestions for Indian & US Markets -->
+        <div id="searchSuggestions" class="search-suggestions-dropdown" style="display:none;"></div>
+      </div>
+
+      <!-- Quick Tickers -->
+      <div class="quick-tickers-wrapper">
+        <span class="quick-label">Popular Tickers:</span>
+        <div class="ticker-chips">
+          <button class="chip active" data-symbol="MSFT">MSFT</button>
+          <button class="chip" data-symbol="AAPL">AAPL</button>
+          <button class="chip" data-symbol="NVDA">NVDA</button>
+          <button class="chip" data-symbol="TSLA">TSLA</button>
+          <button class="chip" data-symbol="AGYS">AGYS</button>
+          <button class="chip" data-symbol="GOOGL">GOOGL</button>
+          <button class="chip" data-symbol="RELIANCE.NS">RELIANCE.NS</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="tabPrediction">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+        Multi-Level Predictions
+      </button>
+      <button class="tab-btn" data-tab="tabBacktesting">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        Phase 4 Strategy Backtesting
+      </button>
+      <button class="tab-btn" data-tab="tabScanner">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        Market Watchlist Scanner
+      </button>
+      <button class="tab-btn" data-tab="tabModels">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        Model Registry & Specs
+      </button>
+    </nav>
+
+    <!-- TAB 1: PREDICTIONS -->
+    <section id="tabPrediction" class="tab-content active">
+      <!-- Loading Banner -->
+      <div id="predictionLoading" class="loading-state" style="display: none;">
+        <div class="spinner"></div>
+        <p>Crunching 65+ technical indicators and querying ML models for <span id="loadingSymbol">MSFT</span>...</p>
+      </div>
+
+      <!-- Main Prediction Grid -->
+      <div id="predictionResults" class="prediction-view">
+        <!-- Level 3 AI Trading Recommendation Hero Banner -->
+        <div class="signal-hero-card" id="signalHeroCard">
+          <div class="signal-hero-header">
+            <div>
+              <span class="level-tag">LEVEL 3 SIGNAL</span>
+              <div id="heroCompanyBanner" class="hero-company-banner" style="display:none;">
+                <span id="heroCompanyName" class="company-name-text"></span>
+                <span id="heroCompanyBadge" class="market-badge-tag"></span>
+              </div>
+              <h2 id="signalTitle">BUY</h2>
+              <p id="signalActionDesc">BUY with target take-profit and stop-loss limits</p>
+            </div>
+            <div class="confidence-ring-wrapper">
+              <div class="confidence-number" id="signalConfidenceText">74%</div>
+              <span class="confidence-label">Signal Confidence</span>
+            </div>
+          </div>
+
+          <!-- Risk / Targets row -->
+          <div class="signal-metrics-row">
+            <div class="signal-metric-box">
+              <span class="metric-title">Current Price</span>
+              <span class="metric-val" id="metricCurrentPrice">$514.02</span>
+            </div>
+            <div class="signal-metric-box">
+              <span class="metric-title">Predicted Tomorrow Close</span>
+              <span class="metric-val highlight" id="metricPredictedClose">$517.16</span>
+              <span class="change-pill positive" id="metricExpectedChange">+0.61%</span>
+            </div>
+            <div class="signal-metric-box">
+              <span class="metric-title">Dynamic Stop-Loss</span>
+              <span class="metric-val stop-loss" id="metricStopLoss">$503.14</span>
+            </div>
+            <div class="signal-metric-box">
+              <span class="metric-title">Target Take-Profit</span>
+              <span class="metric-val take-profit" id="metricTakeProfit">$532.14</span>
+            </div>
+            <div class="signal-metric-box">
+              <span class="metric-title">Risk / Reward Ratio</span>
+              <span class="metric-val" id="metricRiskReward">1.75:1</span>
+            </div>
+          </div>
+
+          <!-- Automated Broker Execution Control Bar -->
+          <div class="signal-execution-bar">
+            <div class="auto-switch-group">
+              <span class="auto-switch-label">Automated Broker Execution:</span>
+              <button id="autoExecutionToggleBtn" class="toggle-switch-btn off" title="Click to toggle master execution boolean">
+                <span class="switch-indicator"></span>
+                <span id="autoExecutionToggleText">AUTO-EXECUTION: OFF (SAFE)</span>
+              </button>
+            </div>
+            <div class="broker-action-group">
+              <select id="brokerSelect" class="broker-dropdown">
+                <option value="angel_one" selected>Angel One SmartAPI (NSE/BSE)</option>
+                <option value="indmoney">INDmoney (US Stocks)</option>
+              </select>
+              <button id="executeBrokerOrderBtn" class="btn-execute">
+                <span class="btn-text">Execute AI Order</span>
+                <span class="btn-loader" style="display:none;"></span>
+              </button>
+            </div>
+          </div>
+          <div id="executionNotice" class="execution-status-notice" style="display:none;"></div>
+        </div>
+
+        <!-- Two Column Detailed Breakdown: Level 1 & Level 2 -->
+        <div class="prediction-columns-grid">
+          <!-- Level 1: Direction Classification -->
+          <div class="glass-card">
+            <div class="card-header">
+              <span class="level-tag blue">LEVEL 1 CLASSIFICATION</span>
+              <h3>Tomorrow Direction Prediction</h3>
+            </div>
+            <div class="card-body">
+              <div class="direction-badge-container">
+                <div class="direction-badge" id="directionBadge">
+                  <span class="direction-arrow" id="directionArrow">▲</span>
+                  <span class="direction-text" id="directionText">UP</span>
+                </div>
+                <div class="direction-details">
+                  <span class="detail-label">Upward Probability</span>
+                  <span class="detail-value" id="directionProb">68.5%</span>
+                </div>
+              </div>
+
+              <!-- Probability Bar -->
+              <div class="probability-track">
+                <div class="probability-fill" id="directionProbBar" style="width: 68%;"></div>
+              </div>
+              <div class="prob-labels">
+                <span>0% Down</span>
+                <span>50% Neutral</span>
+                <span>100% Up</span>
+              </div>
+
+              <div class="sub-info-grid">
+                <div class="sub-info-item">
+                  <span class="sub-info-label">Direction Confidence</span>
+                  <span class="sub-info-val" id="dirConfidenceVal">37%</span>
+                </div>
+                <div class="sub-info-item">
+                  <span class="sub-info-label">News Sentiment</span>
+                  <span class="sub-info-val" id="newsSentimentVal">BULLISH (+0.18)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Level 2: OHLC Price Targets -->
+          <div class="glass-card">
+            <div class="card-header">
+              <span class="level-tag purple">LEVEL 2 REGRESSION</span>
+              <h3>Tomorrow's Predicted OHLC</h3>
+            </div>
+            <div class="card-body">
+              <div class="ohlc-grid">
+                <div class="ohlc-box">
+                  <span class="ohlc-label">OPEN</span>
+                  <span class="ohlc-price" id="ohlcOpen">$514.76</span>
+                  <span class="ohlc-today" id="ohlcOpenToday">Today: $519.09</span>
+                </div>
+                <div class="ohlc-box">
+                  <span class="ohlc-label">HIGH</span>
+                  <span class="ohlc-price" id="ohlcHigh">$518.20</span>
+                  <span class="ohlc-today" id="ohlcHighToday">Today: $522.50</span>
+                </div>
+                <div class="ohlc-box">
+                  <span class="ohlc-label">LOW</span>
+                  <span class="ohlc-price" id="ohlcLow">$512.10</span>
+                  <span class="ohlc-today" id="ohlcLowToday">Today: $513.66</span>
+                </div>
+                <div class="ohlc-box target">
+                  <span class="ohlc-label">CLOSE</span>
+                  <span class="ohlc-price highlight" id="ohlcClose">$517.16</span>
+                  <span class="ohlc-today" id="ohlcCloseToday">Today: $514.02</span>
+                </div>
+              </div>
+
+              <div class="sub-info-grid" style="margin-top: 16px;">
+                <div class="sub-info-item">
+                  <span class="sub-info-label">95% Confidence Interval</span>
+                  <span class="sub-info-val" id="confidenceIntervalVal">$503.20 — $531.12</span>
+                </div>
+                <div class="sub-info-item">
+                  <span class="sub-info-label">14-Day ATR (Volatility)</span>
+                  <span class="sub-info-val" id="atrVal">$7.25</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Technical Indicators Snapshot Bar -->
+        <div class="glass-card indicators-card">
+          <div class="card-header">
+            <h3>Technical Indicators Context</h3>
+            <span class="timestamp-label" id="predictionDateText">Date: 2026-10-17</span>
+          </div>
+          <div class="indicators-row">
+            <div class="indicator-stat">
+              <span class="ind-name">RSI (14)</span>
+              <span class="ind-val" id="indRsi">52.8</span>
+              <span class="ind-badge" id="indRsiBadge">Neutral</span>
+            </div>
+            <div class="indicator-stat">
+              <span class="ind-name">MACD</span>
+              <span class="ind-val" id="indMacd">+1.24</span>
+              <span class="ind-badge" id="indMacdBadge">Bullish Cross</span>
+            </div>
+            <div class="indicator-stat">
+              <span class="ind-name">MA (20)</span>
+              <span class="ind-val" id="indMa20">$510.40</span>
+              <span class="ind-badge">Trend</span>
+            </div>
+            <div class="indicator-stat">
+              <span class="ind-name">MA (50)</span>
+              <span class="ind-val" id="indMa50">$498.20</span>
+              <span class="ind-badge">Long-term</span>
+            </div>
+            <div class="indicator-stat">
+              <span class="ind-name">20-Day Volatility</span>
+              <span class="ind-val" id="indVol">1.4%</span>
+              <span class="ind-badge">Daily Std</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: BACKTESTING -->
+    <section id="tabBacktesting" class="tab-content">
+      <div class="backtest-controls-card">
+        <h3>Phase 4 Event-Driven Backtesting Simulator</h3>
+        <p class="subtitle">Realistic simulation with zero lookahead bias, 0.05% slippage, 0.1% commissions, and ATR stop-loss.</p>
+
+        <div class="backtest-form-grid">
+          <div class="form-group">
+            <label>Stock Symbol</label>
+            <input type="text" id="btSymbolInput" value="MSFT" />
+          </div>
+          <div class="form-group">
+            <label>Trading Strategy</label>
+            <select id="btStrategySelect">
+              <option value="enhanced" selected>Enhanced Hybrid Strategy (L1 + L2 consensus)</option>
+              <option value="direction">Direction Strategy (L1 Classifier threshold)</option>
+              <option value="regression">Regression Expected Return Strategy (L2 price target)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Initial Capital ($)</label>
+            <input type="number" id="btCapitalInput" value="10000" step="500" min="100" />
+          </div>
+          <div class="form-group">
+            <label>Risk Stops Mode</label>
+            <select id="btAtrSelect">
+              <option value="true" selected>Dynamic ATR Multiplier Stops (Recommended)</option>
+              <option value="false">Fixed Percentage (3% Stop / 6% Take Profit)</option>
+            </select>
+          </div>
+          <div class="form-group-btn">
+            <button id="runBacktestBtn" class="btn-primary">
+              <span class="btn-text">Execute Backtest</span>
+              <span class="btn-loader" style="display:none;"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backtest Loading -->
+      <div id="btLoading" class="loading-state" style="display: none;">
+        <div class="spinner"></div>
+        <p>Executing out-of-sample simulation and walk-forward calculations...</p>
+      </div>
+
+      <!-- Backtest Results Display -->
+      <div id="btResultsView" class="backtest-results-view">
+        <!-- Metrics Cards Grid -->
+        <div class="metrics-dashboard-grid">
+          <div class="metric-card">
+            <span class="mc-label">Total Strategy Return</span>
+            <span class="mc-val positive" id="btTotalReturn">+10.18%</span>
+            <span class="mc-sub" id="btBenchmarkReturn">Benchmark: +29.91%</span>
+          </div>
+          <div class="metric-card">
+            <span class="mc-label">Sharpe Ratio</span>
+            <span class="mc-val" id="btSharpe">1.71</span>
+            <span class="mc-sub" id="btSortino">Sortino: 2.21</span>
+          </div>
+          <div class="metric-card">
+            <span class="mc-label">Maximum Drawdown</span>
+            <span class="mc-val safe" id="btMaxDrawdown">-3.39%</span>
+            <span class="mc-sub" id="btBenchDrawdown">Benchmark: -23.38% (7x safer!)</span>
+          </div>
+          <div class="metric-card">
+            <span class="mc-label">Win Rate</span>
+            <span class="mc-val" id="btWinRate">66.7%</span>
+            <span class="mc-sub" id="btTradesCount">4 wins / 2 losses (6 total)</span>
+          </div>
+          <div class="metric-card">
+            <span class="mc-label">Profit Factor</span>
+            <span class="mc-val" id="btProfitFactor">4.05</span>
+            <span class="mc-sub">Gross Win / Gross Loss</span>
+          </div>
+          <div class="metric-card">
+            <span class="mc-label">Ending Portfolio Equity</span>
+            <span class="mc-val highlight" id="btFinalEquity">$11,017.69</span>
+            <span class="mc-sub">Started at $10,000.00</span>
+          </div>
+        </div>
+
+        <!-- Equity Curve Chart -->
+        <div class="glass-card chart-card">
+          <div class="card-header">
+            <h3>Equity Curve vs. Buy & Hold Benchmark</h3>
+            <span class="subtitle">Out-of-sample temporal split (zero leakage)</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="equityCurveChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Executed Trades Log Table -->
+        <div class="glass-card table-card">
+          <div class="card-header">
+            <h3>Recent Executed Trades</h3>
+            <span class="subtitle">Historical trade log with entry, exit, P&L, and reasons</span>
+          </div>
+          <div class="table-container">
+            <table class="trades-table">
+              <thead>
+                <tr>
+                  <th>Entry Date</th>
+                  <th>Exit Date</th>
+                  <th>Action</th>
+                  <th>Entry Price</th>
+                  <th>Exit Price</th>
+                  <th>P&L ($)</th>
+                  <th>Return (%)</th>
+                  <th>Exit Reason</th>
+                </tr>
+              </thead>
+              <tbody id="tradesTableBody">
+                <!-- Populated dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: SCANNER -->
+    <section id="tabScanner" class="tab-content">
+      <div class="glass-card">
+        <div class="card-header">
+          <div>
+            <h3>Multi-Stock Market Scanner</h3>
+            <p class="subtitle">Scan all watchlist equities to identify highest-confidence trading signals.</p>
+          </div>
+          <button id="scanWatchlistBtn" class="btn-primary">
+            <span class="btn-text">Scan Watchlist Now</span>
+            <span class="btn-loader" style="display:none;"></span>
+          </button>
+        </div>
+
+        <div id="scannerLoading" class="loading-state" style="display:none;">
+          <div class="spinner"></div>
+          <p>Scanning multiple symbols and ranking signals...</p>
+        </div>
+
+        <div class="table-container" style="margin-top: 16px;">
+          <table class="trades-table" id="scannerTable">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Current Price</th>
+                <th>Predicted Tomorrow Close</th>
+                <th>Expected Change</th>
+                <th>Direction</th>
+                <th>Signal</th>
+                <th>Confidence</th>
+                <th>Stop-Loss</th>
+                <th>Take-Profit</th>
+                <th>RSI</th>
+                <th>Sentiment</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="scannerTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: MODELS -->
+    <section id="tabModels" class="tab-content">
+      <div class="models-overview-grid">
+        <div class="glass-card">
+          <div class="card-header">
+            <h3>Architecture & Model Specs</h3>
+          </div>
+          <div class="card-body">
+            <div class="model-spec-item">
+              <span class="spec-label">Level 1 Model:</span>
+              <span class="spec-value">Random Forest Classifier / Logistic Regression (Direction)</span>
+            </div>
+            <div class="model-spec-item">
+              <span class="spec-label">Level 2 Models:</span>
+              <span class="spec-value">Linear Regression & Random Forest Regressor (OHLC Targets)</span>
+            </div>
+            <div class="model-spec-item">
+              <span class="spec-label">Feature Engineering:</span>
+              <span class="spec-value">61 Features (Technical, Candlestick, Volume, Lags, ATR)</span>
+            </div>
+            <div class="model-spec-item">
+              <span class="spec-label">Validation Method:</span>
+              <span class="spec-value">Strict Chronological Temporal Split (80% Train / 20% Test)</span>
+            </div>
+            <div class="model-spec-item">
+              <span class="spec-label">Execution Latency:</span>
+              <span class="spec-value">&lt; 15ms (Cached Models & Features)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <h3>API Integration Endpoints</h3>
+          </div>
+          <div class="card-body">
+            <div class="endpoint-code-box">
+              <code>GET /api/v1/predict/{symbol}</code>
+              <p>Returns 3-Level predictions, prices, and AI trade signal.</p>
+            </div>
+            <div class="endpoint-code-box">
+              <code>POST /api/v1/backtest</code>
+              <p>Simulates historical strategy with execution friction and risk rules.</p>
+            </div>
+            <div class="endpoint-code-box">
+              <code>POST /api/v1/stocks/scan</code>
+              <p>Scans multiple symbols in parallel and ranks opportunities.</p>
+            </div>
+            <div class="endpoint-code-box">
+              <code>GET /api/v1/status</code>
+              <p>System health, uptime, and cached models state.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>StockMarketAI &bull; Production Machine Learning Trading System &bull; Phase 5 Reusable ML Service</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
