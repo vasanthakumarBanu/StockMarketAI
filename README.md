@@ -69,7 +69,7 @@
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/Vasanth1807/StockMarketAI.git
+git clone https://github.com/vasanthakumarBanu/StockMarketAI.git
 cd StockMarketAI
 pip install -r requirements.txt
 ```
