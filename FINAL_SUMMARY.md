@@ -188,16 +188,15 @@ Evaluation
 
 ### **📋 HOW TO USE FOR ANY STOCK:**
 ```bash
-# Run the complete workflow for any stock
-python complete_workflow_fixed.py YOUR_SYMBOL_HERE
+# Predict any stock or company name instantly via CLI
+python -m src.stockmarketai.cli.predict_any_stock MSFT
+python -m src.stockmarketai.cli.predict_any_stock "SRM Energy"
+python -m src.stockmarketai.cli.predict_any_stock RELIANCE.NS
 
-# Examples:
-python complete_workflow_fixed.py AGYS   # Agilysys
-python complete_workflow_fixed.py MSFT   # Microsoft
-python complete_workflow_fixed.py AAPL   # Apple
-python complete_workflow_fixed.py TSLA   # Tesla
-python complete_workflow_fixed.py NVDA   # NVIDIA
+# Or run full model retraining pipeline
+python -m src.stockmarketai.pipelines.complete_workflow AGYS
 ```
+
 
 ### **📁 ARTIFACTS CREATED:**
 - **Raw Data**: `src/stockmarketai/data/raw/{SYMBOL}.csv`

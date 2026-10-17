@@ -226,10 +226,15 @@ python run_backtest.py AAPL --strategy direction --stop-loss 0.02 --take-profit 
 
 ### 🔮 3. How to Train Models & Forecast Any Stock
 ```powershell
-python complete_workflow_fixed.py AGYS
-python complete_workflow_fixed.py TSLA
-python complete_workflow_fixed.py RELIANCE.NS
+# Interactive & symbol prediction CLI (instant multi-market forecasting)
+python -m src.stockmarketai.cli.predict_any_stock MSFT
+python -m src.stockmarketai.cli.predict_any_stock "SRM Energy"
+python -m src.stockmarketai.cli.predict_any_stock RELIANCE.NS
+
+# Or train full workflow pipeline directly
+python -m src.stockmarketai.pipelines.complete_workflow AGYS
 ```
+
 
 ---
 
@@ -328,24 +333,42 @@ StockMarketAI supports all ticker formats available through Yahoo Finance:
 StockMarketAI/
 ├── run_api.py                          # Unified launcher for REST API & Web Dashboard
 ├── run_backtest.py                     # CLI launcher for Phase 4 Backtesting
-├── complete_workflow_fixed.py          # Full model training & prediction CLI
-├── ABOUT_STOCKMARKETAI.md              # This comprehensive guide
+├── start_stockmarketai.bat             # 1-Click Windows launcher
+├── ABOUT_STOCKMARKETAI.md              # Comprehensive architectural guide
+├── README.md                           # GitHub repository overview
 ├── PHASE4_COMPLETED.md                 # Technical specification of Phase 4 Backtesting
 ├── PHASE5_COMPLETED.md                 # Technical specification of Phase 5 REST API & Dashboard
 ├── PHASE6_COMPLETED.md                 # Technical specification of Phase 6 DLL & Brokers
+├── FINAL_SUMMARY.md                    # Multi-phase summary
+├── requirements.txt                    # Python project dependencies
 │
-├── models_complete/                    # Saved scikit-learn models & scalers
-│   ├── tomorrow_open_*.pkl
-│   ├── tomorrow_high_*.pkl
-│   ├── tomorrow_low_*.pkl
-│   ├── tomorrow_close_*.pkl
-│   ├── feature_scaler.pkl
-│   └── feature_columns.pkl
+├── config/                             # Market configurations & stock lists
+│   └── stocks.yaml
+│
+├── models/                             # Classification models & scalers
+│   ├── stock_rf_model.pkl              # Direction classifier (Random Forest)
+│   ├── stock_lr_model.pkl              # Direction classifier (Logistic Regression)
+│   ├── feature_scaler.pkl              # Input standard scaler
+│   └── feature_columns.pkl             # Active feature names
+│
+├── models_complete/                    # Regression models & scalers
+│   ├── tomorrow_open_*.pkl             # Tomorrow Open price regressors
+│   ├── tomorrow_high_*.pkl             # Tomorrow High price regressors
+│   ├── tomorrow_low_*.pkl              # Tomorrow Low price regressors
+│   ├── tomorrow_close_*.pkl            # Tomorrow Close price regressors
+│   ├── feature_scaler.pkl              # Input standard scaler
+│   ├── feature_columns.pkl             # Active feature names
+│   └── results_summary.pkl             # Cross-validation performance metrics
+│
+├── notebooks/                          # Production data science Jupyter notebooks
+│   ├── 01_data_collection.ipynb        # Data ingestion & Yahoo Finance download
+│   └── 02_model_baseline.ipynb         # Model baseline & training exploration
 │
 ├── src/
 │   ├── api/                            # Production FastAPI REST microservice
 │   │   ├── app.py                      # App factory, CORS, static mounts
 │   │   ├── schemas.py                  # Pydantic v2 schemas
+│   │   ├── main.py                     # FastAPI entrypoint
 │   │   └── routes/                     # Health, predict, backtest, and scanner endpoints
 │   │
 │   ├── backtesting/                    # Backtesting framework
@@ -353,18 +376,32 @@ StockMarketAI/
 │   │   ├── strategy.py                 # Hybrid, Direction, and Regression strategies
 │   │   └── metrics.py                  # Sharpe, Sortino, Drawdown, Profit Factor
 │   │
-│   └── stockmarketai/
+│   └── stockmarketai/                  # Core library & engine
 │       ├── service.py                  # Reusable ML Service (singleton, cache, inference)
+│       ├── sentiment.py                # VADER news sentiment scoring engine
 │       ├── client.py                   # Python Developer SDK
+│       ├── data/                       # Ingestion, caching, and company search resolver
+│       ├── features/                   # 72 quantitative, candlestick & volume features
+│       ├── pipelines/                  # Complete workflow training pipelines
+│       ├── trading/                    # Enhanced decision engine
+│       ├── cli/                        # Interactive CLI prediction tools
 │       ├── frontend/                   # Interactive Web Dashboard (HTML/CSS/JS)
 │       ├── brokers/                    # Angel One & INDmoney connectors, circuit breaker
 │       └── integration/                # DLL service & C# .NET wrapper
 │
-└── tests/                              # Automated test suite (21 passing tests)
-    ├── test_service.py
-    ├── test_api.py
-    ├── test_client.py
-    └── test_integration.py
+├── flutter_app/                        # Multi-platform Flutter App (Android, iOS, Web, Windows)
+│   ├── lib/
+│   │   ├── main.dart                   # Application root
+│   │   ├── screens/                    # Dashboard, Search, Backtest, Trade screens
+│   │   ├── models/                     # Stock, Trade, Portfolio data models
+│   │   └── services/                   # REST API client & state management
+│   └── pubspec.yaml
+│
+└── tests/                              # Automated test suite (24 passing tests)
+    ├── test_service.py                 # ML service unit tests
+    ├── test_api.py                     # FastAPI REST endpoint tests
+    ├── test_client.py                  # Python SDK tests
+    └── test_integration.py            # C# DLL integration & broker tests
 ```
 
 ---
@@ -373,7 +410,8 @@ StockMarketAI/
 
 This project is built modularly. You can edit and extend it in several straightforward ways:
 
-1. **Add Custom Features**: Open [`src/stockmarketai/features/feature_engineering.py`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/stockmarketai/features/feature_engineering.py) or `engineer_all_features()` in [`complete_workflow_fixed.py`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/complete_workflow_fixed.py) to calculate new indicators (e.g., Stochastic RSI, Fibonacci retracements).
+1. **Add Custom Features**: Open [`src/stockmarketai/features/feature_engineering.py`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/stockmarketai/features/feature_engineering.py) to calculate new indicators (e.g., Stochastic RSI, Fibonacci retracements).
 2. **Adjust Strategy Rules & Stop Limits**: Open [`src/backtesting/strategy.py`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/backtesting/strategy.py) to tune the ATR multiplier stops (`atr_multiplier_stop` or `atr_multiplier_profit`).
 3. **Change Risk Circuit Breakers**: Open [`src/stockmarketai/brokers/base.py`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/stockmarketai/brokers/base.py) to configure maximum daily loss thresholds (`max_daily_loss_pct`) or maximum concurrent positions.
 4. **Edit the Web UI Dashboard**: Modify [`src/stockmarketai/frontend/index.html`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/stockmarketai/frontend/index.html) or [`styles.css`](file:///f:/IT/AI%20and%20ML/Data%20Science/Projects/StockMarketAI/src/stockmarketai/frontend/styles.css) to add new widgets, watchlists, or custom charts.
+

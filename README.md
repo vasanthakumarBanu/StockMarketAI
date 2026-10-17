@@ -87,6 +87,17 @@ Open your browser to:
 - **Interactive Web Terminal**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
 - **Interactive OpenAPI Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
+### 3. Command Line Interface (CLI)
+
+```bash
+# Instant multi-market AI prediction & technical analysis
+python -m src.stockmarketai.cli.predict_any_stock MSFT
+python -m src.stockmarketai.cli.predict_any_stock "SRM Energy"
+
+# Event-driven backtesting with Sharpe, Sortino & Max Drawdown
+python run_backtest.py MSFT --strategy enhanced --initial-capital 10000
+```
+
 ---
 
 ## 📱 Cross-Platform Flutter App

@@ -20,6 +20,9 @@ from . import models
 from . import pipelines
 from . import trading
 from . import cli
+from .service import StockMarketAIService
+from .sentiment import get_stock_sentiment
+from .client import StockMarketAIClient
 
 __all__ = [
     'data',
@@ -27,8 +30,13 @@ __all__ = [
     'models',
     'pipelines',
     'trading',
-    'cli'
+    'cli',
+    'StockMarketAIService',
+    'get_stock_sentiment',
+    'StockMarketAIClient',
 ]
+
+
 
 __version__ = '1.0.0'
 __author__ = 'StockMarketAI Team'
