@@ -27,8 +27,9 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+from src.stockmarketai.data.load_stock_data import download_stock_data
+from src.stockmarketai.features.feature_engineering import engineer_all_features
 
-from complete_workflow_fixed import download_stock_data, engineer_all_features
 from src.backtesting.strategy import (
     BaseStrategy,
     DirectionStrategy,

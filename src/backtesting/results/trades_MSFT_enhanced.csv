@@ -1,5 +1,6 @@
 symbol,entry_date,entry_price,exit_date,exit_price,shares,pnl,pnl_pct,holding_days,exit_reason
-MSFT,2026-06-23 04:00:00,371.87,2026-07-06 04:00:00,386.12,26,360.55,3.83,8,"Signal Exit (Consensus SELL: P(Up)=0.46, ExpRet=-1.85%)"
-MSFT,2026-08-17 04:00:00,489.46,2026-08-26 04:00:00,487.61,21,-49.25,-0.38,7,"Signal Exit (Consensus SELL: P(Up)=0.45, ExpRet=+1.26%)"
-MSFT,2026-09-09 04:00:00,493.32,2026-09-22 04:00:00,507.07,20,264.85,2.79,9,"Signal Exit (Consensus SELL: P(Up)=0.39, ExpRet=+0.98%)"
-MSFT,2026-10-05 04:00:00,521.88,2026-10-06 04:00:00,531.41,20,180.04,1.83,1,"Signal Exit (Consensus SELL: P(Up)=0.33, ExpRet=+1.04%)"
+MSFT,2026-06-16 04:00:00,395.24,2026-06-17 04:00:00,389.32,25,-157.78,-1.5,1,"Signal Exit (Consensus SELL: P(Up)=0.46, ExpRet=+0.00%)"
+MSFT,2026-07-20 04:00:00,390.87,2026-07-21 04:00:00,397.86,25,164.85,1.79,1,"Signal Exit (Consensus SELL: P(Up)=0.45, ExpRet=-0.60%)"
+MSFT,2026-07-28 04:00:00,392.62,2026-07-29 04:00:00,392.46,25,-13.64,-0.04,1,"Signal Exit (Consensus SELL: P(Up)=0.45, ExpRet=+1.29%)"
+MSFT,2026-08-17 04:00:00,489.46,2026-08-31 04:00:00,510.12,20,403.02,4.22,10,"Signal Exit (Consensus SELL: P(Up)=0.42, ExpRet=+0.46%)"
+MSFT,2026-09-09 04:00:00,493.32,2026-09-22 04:00:00,507.07,20,264.85,2.79,9,"Signal Exit (Consensus SELL: P(Up)=0.46, ExpRet=-0.30%)"
