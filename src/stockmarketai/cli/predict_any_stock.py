@@ -7,9 +7,16 @@ Simple interface to predict tomorrow's OHLC for any stock symbol
 import subprocess
 import sys
 
+# Ensure UTF-8 output encoding on Windows consoles
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 def predict_stock(symbol):
     """Predict tomorrow's OHLC for a given stock symbol using the complete workflow"""
-    print(f"🔮 StockMarketAI: Predicting tomorrow's OHLC for {symbol.upper()}")
+    print(f"\n[StockMarketAI] Predicting tomorrow's OHLC for {symbol.upper()}")
     print("=" * 60)
 
     try:
@@ -24,19 +31,19 @@ def predict_stock(symbol):
             print(result.stdout)
             return True
         else:
-            print(f"❌ Error predicting {symbol}:")
+            print(f"[ERROR] Error predicting {symbol}:")
             print(result.stderr)
             return False
 
     except subprocess.TimeoutExpired:
-        print(f"⏰ Timeout predicting {symbol} (took too long)")
+        print(f"[TIMEOUT] Timeout predicting {symbol} (took too long)")
         return False
     except Exception as e:
-        print(f"❌ Failed to predict {symbol}: {e}")
+        print(f"[ERROR] Failed to predict {symbol}: {e}")
         return False
 
 def main():
-    print("🚀 StockMarketAI: Predict ANY Stock Symbol")
+    print("StockMarketAI: Predict ANY Stock Symbol")
     print("=" * 50)
     print("Enter stock symbols to get tomorrow's OHLC prediction")
     print("Type 'quit' or 'exit' to stop")
