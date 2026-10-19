@@ -435,8 +435,8 @@ def main():
     result = predict_complete_workflow(symbol)
 
     if 'error' not in result:
-        print(f"\nTo run for another stock: python complete_workflow_fixed.py SYMBOL")
-        print(f"Example: python complete_workflow_fixed.py AGYS")
+        print(f"\nTo run for another stock: python complete_workflow.py SYMBOL")
+        print(f"Example: python complete_workflow.py AGYS")
     else:
         print(f"Workflow failed: {result['error']}")
 

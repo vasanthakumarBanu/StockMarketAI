@@ -16,7 +16,7 @@ def predict_stock(symbol):
         # Run the complete workflow
         result = subprocess.run([
             sys.executable,
-            "complete_workflow_fixed.py",
+            "complete_workflow.py",
             symbol.upper()
         ], capture_output=True, text=True, timeout=120)
 
