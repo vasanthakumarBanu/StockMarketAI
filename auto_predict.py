@@ -1,63 +1,65 @@
 #!/usr/bin/env python3
 """
-StockMarketAI: Automatic Stock Prediction from Yahoo Finance
-Demonstrates how to enter a stock name, auto-download data, and get prediction
+StockMarketAI: Consolidated Automatic Stock Prediction
+Downloads live historical data from Yahoo Finance and performs:
+  1. Level 1 Directional Forecast (Up/Down classification & confidence)
+  2. Level 2 Price Target Forecast (Tomorrow's Open, High, Low, Close regression)
 """
 
-import pandas as pd
-import numpy as np
-import joblib
 import os
-from sklearn.preprocessing import StandardScaler
-import yfinance as yf
-from datetime import datetime, timedelta
 import sys
+import argparse
+from datetime import datetime
+import numpy as np
+import pandas as pd
+import joblib
+import yfinance as yf
 
-def download_and_save_stock_data(symbol, period="2y"):
+# Ensure UTF-8 output encoding on Windows consoles
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+def download_and_save_stock_data(symbol, period="2y", save_dir="src/stockmarketai/data/raw/"):
     """
-    Download stock data from Yahoo Finance and save in our required format
+    Download stock data from Yahoo Finance and save in the required format.
 
     Args:
-        symbol (str): Stock symbol (e.g., 'AGYS', 'MSFT', 'AAPL')
-        period (str): Data period ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
+        symbol (str): Stock ticker (e.g., 'MSFT', 'AAPL', 'RELIANCE.NS')
+        period (str): Data duration ('1mo', '3mo', '6mo', '1y', '2y', '5y')
+        save_dir (str): Directory where CSV will be saved
 
     Returns:
-        str: Path to saved CSV file, or None if failed
+        str: Absolute or relative path to saved CSV file, or None if failed
     """
     try:
-        print(f"Downloading {symbol} data from Yahoo Finance (period: {period})...")
+        clean_symbol = symbol.strip().upper()
+        print(f"Downloading {clean_symbol} data from Yahoo Finance (period: {period})...")
 
-        # Download data
-        ticker = yf.Ticker(symbol)
-        # Get historical market data
+        ticker = yf.Ticker(clean_symbol)
         hist = ticker.history(period=period)
 
         if hist.empty:
-            print(f"No data found for {symbol}")
+            print(f"[!] No market data found for symbol '{clean_symbol}'")
             return None
 
-        print(f"Downloaded {len(hist)} rows of data for {symbol}")
+        print(f"Downloaded {len(hist)} rows of data for {clean_symbol}")
 
-        # Reset index to have Date as column
         hist.reset_index(inplace=True)
 
-        # Yahoo Finance returns columns: Date, Open, High, Low, Close, Volume, Dividends, Stock Splits
-        # We need: Date, Open, High, Low, Close, Volume (in this order)
         required_cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-
-        # Check if we have all required columns
-        missing_cols = [col for col in required_cols if col not in hist.columns]
+        missing_cols = [c for c in required_cols if c not in hist.columns]
         if missing_cols:
-            print(f"Missing columns: {missing_cols}")
+            print(f"[!] Missing required columns from Yahoo Finance: {missing_cols}")
             return None
 
-        # Select and order columns correctly
         df = hist[required_cols].copy()
 
-        # Ensure proper data types
-        # Handle timezone-aware datetime if present
+        # Handle timezone-aware timestamps
         if hasattr(df['Date'].dt, 'tz') and df['Date'].dt.tz is not None:
-            # Convert to UTC then remove timezone for consistency
             df['Date'] = df['Date'].dt.tz_convert('UTC').dt.tz_localize(None)
         else:
             df['Date'] = pd.to_datetime(df['Date'])
@@ -65,239 +67,425 @@ def download_and_save_stock_data(symbol, period="2y"):
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Sort by date (oldest first)
         df.sort_values('Date', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # Save to our raw data directory
-        raw_dir = "src/stockmarketai/data/raw/"
-        os.makedirs(raw_dir, exist_ok=True)
-        save_path = os.path.join(raw_dir, f"{symbol.upper()}.csv")
-
-        # Save without index (we want Date as a column)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, f"{clean_symbol}.csv")
         df.to_csv(save_path, index=False)
 
         print(f"Saved data to: {save_path}")
         print(f"   Date range: {df['Date'].min().strftime('%Y-%m-%d')} to {df['Date'].max().strftime('%Y-%m-%d')}")
-
         return save_path
 
     except Exception as e:
-        print(f"Error downloading {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[!] Error downloading {symbol}: {e}")
         return None
 
-def predict_stock_from_file(symbol):
-    """Predict stock movement from our saved raw CSV data"""
 
-    # Check if raw data exists
-    raw_path = f"src/stockmarketai/data/raw/{symbol}.csv"
-    if not os.path.exists(raw_path):
-        return {
-            'error': f"Raw data for {symbol} not found. Run download first.",
-            'symbol': symbol
-        }
+def engineer_features(df):
+    """
+    Engineer the exact 17 quantitative indicators expected by the models.
 
+    Args:
+        df (pd.DataFrame): Raw OHLCV DataFrame with Date index or Date column.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: (Featured DataFrame, list of feature column names)
+    """
+    data = df.copy()
+
+    # Ensure Date is index
+    if 'Date' in data.columns:
+        data['Date'] = pd.to_datetime(data['Date'], utc=True)
+        data['Date'] = data['Date'].dt.tz_localize(None)
+        data.set_index('Date', inplace=True)
+
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+
+    # 1. Return and Volatility
+    data['Daily_Return'] = data['Close'].pct_change()
+    data['Volatility_20'] = data['Daily_Return'].rolling(20).std()
+
+    # 2. Moving Averages
+    data['MA_20'] = data['Close'].rolling(20).mean()
+    data['MA_50'] = data['Close'].rolling(50).mean()
+    data['MA_200'] = data['Close'].rolling(200).mean()
+
+    # 3. RSI (14-period)
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / (loss + 1e-9)
+    data['RSI_14'] = 100 - (100 / (1 + rs))
+
+    # 4. MACD (12, 26, 9)
+    exp1 = data['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD'] = exp1 - exp2
+    data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
+    data['MACD_Hist'] = data['MACD'] - data['MACD_Signal']
+
+    # 5. Bollinger Bands (20-period)
+    data['BB_Middle'] = data['Close'].rolling(20).mean()
+    bb_std = data['Close'].rolling(20).std()
+    data['BB_Upper'] = data['BB_Middle'] + (bb_std * 2)
+    data['BB_Lower'] = data['BB_Middle'] - (bb_std * 2)
+
+    # 17 standard feature columns
+    feature_columns = [
+        'Close', 'High', 'Low', 'Open', 'Volume',
+        'Daily_Return', 'Volatility_20',
+        'MA_20', 'MA_50', 'MA_200',
+        'RSI_14',
+        'MACD', 'MACD_Signal', 'MACD_Hist',
+        'BB_Middle', 'BB_Upper', 'BB_Lower'
+    ]
+
+    featured_data = data[feature_columns].copy()
+    featured_data = featured_data.ffill().bfill()
+
+    return featured_data, feature_columns
+
+
+def predict_direction(symbol, featured_data=None, model_dir="models/"):
+    """
+    Predict directional price movement (Level 1 Classification: UP vs DOWN).
+
+    Args:
+        symbol (str): Stock symbol
+        featured_data (pd.DataFrame, optional): Pre-engineered features
+        model_dir (str): Directory containing classification models
+
+    Returns:
+        dict: Direction classification forecast results
+    """
+    clean_symbol = symbol.strip().upper()
     try:
-        # Load model components (verify they exist)
-        model_path = "models/stock_lr_model.pkl"
-        scaler_path = "models/feature_scaler.pkl"
-        features_path = "models/feature_columns.pkl"
+        model_path = os.path.join(model_dir, "stock_lr_model.pkl")
+        scaler_path = os.path.join(model_dir, "feature_scaler.pkl")
+        features_path = os.path.join(model_dir, "feature_columns.pkl")
 
         if not all(os.path.exists(p) for p in [model_path, scaler_path, features_path]):
             return {
-                'error': "Model components not found. Please run Phase 3 training first.",
-                'symbol': symbol
+                'error': f"Classification model files missing in '{model_dir}'. Run classification.py first.",
+                'symbol': clean_symbol
             }
+
+        if featured_data is None:
+            raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
+            if not os.path.exists(raw_path):
+                return {
+                    'error': f"Raw data for {clean_symbol} not found. Run download first.",
+                    'symbol': clean_symbol
+                }
+            df = pd.read_csv(raw_path)
+            featured_data, _ = engineer_features(df)
 
         model = joblib.load(model_path)
         scaler = joblib.load(scaler_path)
         feature_cols = joblib.load(features_path)
 
-        # Load and preprocess raw data - now in correct Yahoo Finance format
-        # Format: Date,Open,High,Low,Close,Volume
-        df = pd.read_csv(raw_path)
-
-        # Convert Date to datetime and set as index
-        df['Date'] = pd.to_datetime(df['Date'], utc=True)
-        df['Date'] = df['Date'].dt.tz_localize(None)  # Remove timezone for consistency
-        df.set_index('Date', inplace=True)
-
-        # Convert numeric columns (should already be numeric from yfinance, but ensure)
-        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # Engineer the EXACT 17 features the model expects
-        data = df.copy()
-
-        # Required features:
-        data['Daily_Return'] = data['Close'].pct_change()
-        data['Volatility_20'] = data['Daily_Return'].rolling(20).std()
-
-        data['MA_20'] = data['Close'].rolling(20).mean()
-        data['MA_50'] = data['Close'].rolling(50).mean()
-        data['MA_200'] = data['Close'].rolling(200).mean()
-
-        # RSI (14-period)
-        delta = data['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        data['RSI_14'] = 100 - (100 / (1 + rs))
-
-        # MACD
-        exp1 = data['Close'].ewm(span=12, adjust=False).mean()
-        exp2 = data['Close'].ewm(span=26, adjust=False).mean()
-        data['MACD'] = exp1 - exp2
-        data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
-        data['MACD_Hist'] = data['MACD'] - data['MACD_Signal']
-
-        # Bollinger Bands (20-period)
-        data['BB_Middle'] = data['Close'].rolling(20).mean()
-        bb_std = data['Close'].rolling(20).std()
-        data['BB_Upper'] = data['BB_Middle'] + (bb_std * 2)
-        data['BB_Lower'] = data['BB_Middle'] - (bb_std * 2)
-
-        # Define the exact 17 features (in order)
-        feature_columns = [
-            'Close', 'High', 'Low', 'Open', 'Volume',
-            'Daily_Return', 'Volatility_20',
-            'MA_20', 'MA_50', 'MA_200',
-            'RSI_14',
-            'MACD', 'MACD_Signal', 'MACD_Hist',
-            'BB_Middle', 'BB_Upper', 'BB_Lower'
-        ]
-
-        # Select and order features
-        featured_data = data[feature_columns].copy()
-
-        # Handle missing values (from rolling windows) - SAME AS IN TRAINING
-        # Use forward fill then backward fill to handle NaNs from rolling windows
-        featured_data = featured_data.ffill().bfill()
-
-        # Prepare features for prediction
         X = featured_data[feature_cols]
         X_scaled = scaler.transform(X)
 
-        # Make predictions
         predictions = model.predict(X_scaled)
-        probabilities = model.predict_proba(X_scaled)[:, 1]  # Probability of "Up" movement
+        probabilities = model.predict_proba(X_scaled)[:, 1]
 
-        # Get latest prediction
-        latest_pred = predictions[-1]
-        latest_prob = probabilities[-1]
+        latest_pred = int(predictions[-1])
+        latest_prob = float(probabilities[-1])
         latest_date = featured_data.index[-1]
+        up_probability = float(probabilities.mean())
+        distribution = np.bincount(predictions)
 
-        # Calculate overall statistics
-        up_probability = probabilities.mean()
-        prediction_distribution = np.bincount(predictions)
-
-        result = {
-            'symbol': symbol.upper(),
-            'latest_date': latest_date.strftime('%Y-%m-%d'),
-            'latest_prediction': int(latest_pred),  # 0 = Down/No move, 1 = Up
-            'latest_probability': float(latest_prob),
-            'prediction_label': 'UP' if latest_pred == 1 else 'DOWN/NO MOVE',
-            'confidence': f"{latest_prob*100:.1f}%",
-            'overall_up_probability': f"{up_probability*100:.1f}%",
-            'prediction_distribution': {
-                'down': int(prediction_distribution[0]) if len(prediction_distribution) > 0 else 0,
-                'up': int(prediction_distribution[1]) if len(prediction_distribution) > 1 else 0
-            },
-            'total_samples': len(predictions),
-            'data_points_used': len(featured_data),
-            'features_engineered': len(feature_columns)
-        }
-
-        return result
-
-    except Exception as e:
-        return {
-            'error': str(e),
-            'symbol': symbol.upper()
-        }
-
-def main():
-    print("=" * 70)
-    print("StockMarketAI: Auto-Download & Predict from Yahoo Finance")
-    print("=" * 70)
-    print()
-
-    # Show what's currently available
-    raw_data_path = "src/stockmarketai/data/raw/"
-    if os.path.exists(raw_data_path):
-        existing_stocks = [f.replace('.csv', '') for f in os.listdir(raw_data_path) if f.endswith('.csv')]
-        print(f"Currently available stocks: {', '.join(existing_stocks) if existing_stocks else 'None'}")
-    else:
-        print("No stocks currently available in raw data directory")
-
-    print()
-
-    # For demo purposes in automated environment, use MSFT
-    # In real usage, this would come from user input or command line argument
-    if len(sys.argv) > 1:
-        user_input = sys.argv[1].strip().upper()
-        print(f"Using stock symbol from command line: {user_input}")
-    else:
-        user_input = "MSFT"  # Default demo
-        print(f"No symbol provided, using default: {user_input}")
-        print("(In interactive use, you would be prompted to enter a stock symbol)")
-
-    print()
-    print(f"Processing {user_input}...")
-    print("-" * 50)
-
-    # Step 1: Download and save data
-    csv_path = download_and_save_stock_data(user_input, period="2y")
-
-    if csv_path is None:
-        print("Failed to download data. Exiting.")
-        return
-
-    print()
-
-    # Step 2: Run prediction
-    print("Running prediction on downloaded data...")
-    result = predict_stock_from_file(user_input)
-
-    if 'error' not in result:
-        print(f"Prediction successful for {result['symbol']}:")
-        print(f"   Date: {result['latest_date']}")
-        print(f"   Prediction: {result['latest_prediction']} ({result['prediction_label']})")
-        print(f"   Probability: {result['latest_probability']:.3f} ({result['confidence']})")
-        print(f"   Overall UP probability: {result['overall_up_probability']}")
-        print(f"   Samples processed: {result['total_samples']}")
-        print(f"   Features engineered: {result['features_engineered']}")
-
-        # Additional interpretation
-        prob = result['latest_probability']
-        if prob > 0.7:
+        # Market sentiment categorization
+        if latest_prob >= 0.70:
             sentiment = "Strong Bullish"
-        elif prob > 0.6:
+        elif latest_prob >= 0.55:
             sentiment = "Moderately Bullish"
-        elif prob > 0.4:
-            sentiment = "Neutral/Uncertain"
-        elif prob > 0.3:
+        elif latest_prob >= 0.45:
+            sentiment = "Neutral / Uncertain"
+        elif latest_prob >= 0.30:
             sentiment = "Moderately Bearish"
         else:
             sentiment = "Strong Bearish"
 
-        print(f"   Market Sentiment: {sentiment}")
+        return {
+            'symbol': clean_symbol,
+            'latest_date': latest_date.strftime('%Y-%m-%d') if hasattr(latest_date, 'strftime') else str(latest_date),
+            'latest_prediction': latest_pred,
+            'latest_probability': latest_prob,
+            'prediction_label': 'UP' if latest_pred == 1 else 'DOWN / NO MOVE',
+            'confidence': f"{latest_prob * 100:.1f}%",
+            'market_sentiment': sentiment,
+            'overall_up_probability': f"{up_probability * 100:.1f}%",
+            'prediction_distribution': {
+                'down': int(distribution[0]) if len(distribution) > 0 else 0,
+                'up': int(distribution[1]) if len(distribution) > 1 else 0
+            },
+            'total_samples': len(predictions),
+            'data_points_used': len(featured_data),
+            'features_engineered': len(feature_cols)
+        }
 
+    except Exception as e:
+        return {'error': str(e), 'symbol': clean_symbol}
+
+
+def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regression/"):
+    """
+    Predict tomorrow's Open, High, Low, Close prices (Level 2 Multi-Target Regression).
+
+    Args:
+        symbol (str): Stock symbol
+        featured_data (pd.DataFrame, optional): Pre-engineered features
+        raw_df (pd.DataFrame, optional): Raw OHLCV DataFrame
+        model_dir (str): Directory containing regression models
+
+    Returns:
+        dict: OHLC regression price forecast results
+    """
+    clean_symbol = symbol.strip().upper()
+    try:
+        scaler_path = os.path.join(model_dir, "feature_scaler.pkl")
+        features_path = os.path.join(model_dir, "feature_columns.pkl")
+
+        if not all(os.path.exists(p) for p in [scaler_path, features_path]):
+            return {
+                'error': f"Regression model files missing in '{model_dir}'. Run regression.py first.",
+                'symbol': clean_symbol
+            }
+
+        if featured_data is None or raw_df is None:
+            raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
+            if not os.path.exists(raw_path):
+                return {
+                    'error': f"Raw data for {clean_symbol} not found. Run download first.",
+                    'symbol': clean_symbol
+                }
+            raw_df = pd.read_csv(raw_path)
+            featured_data, _ = engineer_features(raw_df)
+
+        scaler = joblib.load(scaler_path)
+        feature_cols = joblib.load(features_path)
+
+        X = featured_data[feature_cols]
+        X_scaled = scaler.transform(X)
+
+        model_files = {
+            'Tomorrow_Open': 'tomorrow_open_linear_regression.pkl',
+            'Tomorrow_High': 'tomorrow_high_linear_regression.pkl',
+            'Tomorrow_Low': 'tomorrow_low_linear_regression.pkl',
+            'Tomorrow_Close': 'tomorrow_close_linear_regression.pkl'
+        }
+
+        predictions = {}
+        for target_name, filename in model_files.items():
+            path = os.path.join(model_dir, filename)
+            if not os.path.exists(path):
+                return {'error': f"Missing model file: {path}", 'symbol': clean_symbol}
+            model = joblib.load(path)
+            pred = model.predict(X_scaled)[-1]
+            predictions[target_name] = float(pred)
+
+        latest_date = featured_data.index[-1]
+        today_close = float(raw_df['Close'].iloc[-1])
+        predicted_close = predictions['Tomorrow_Close']
+        change = predicted_close - today_close
+        pct_change = (change / (today_close + 1e-9)) * 100
+
+        return {
+            'symbol': clean_symbol,
+            'prediction_date': latest_date.strftime('%Y-%m-%d') if hasattr(latest_date, 'strftime') else str(latest_date),
+            'today_close': today_close,
+            'tomorrow_open': predictions['Tomorrow_Open'],
+            'tomorrow_high': predictions['Tomorrow_High'],
+            'tomorrow_low': predictions['Tomorrow_Low'],
+            'tomorrow_close': predicted_close,
+            'expected_change': change,
+            'expected_pct_change': pct_change,
+            'features_engineered': len(feature_cols),
+            'data_points_used': len(featured_data)
+        }
+
+    except Exception as e:
+        return {'error': str(e), 'symbol': clean_symbol}
+
+
+def auto_predict_stock(symbol, mode="both", period="2y", force_download=False):
+    """
+    Unified end-to-end stock prediction pipeline.
+    Downloads data (if requested/needed), computes features once, and runs
+    Direction Classification and/or OHLC Regression.
+
+    Args:
+        symbol (str): Stock symbol (e.g. 'MSFT')
+        mode (str): 'both', 'direction', or 'ohlc'
+        period (str): Historical period to download ('2y', '1y', etc.)
+        force_download (bool): If True, re-downloads even if CSV exists
+
+    Returns:
+        dict: Consolidated results dictionary
+    """
+    clean_symbol = symbol.strip().upper()
+    raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
+
+    if force_download or not os.path.exists(raw_path):
+        csv_path = download_and_save_stock_data(clean_symbol, period=period)
+        if csv_path is None:
+            return {'error': f"Failed to download market data for {clean_symbol}", 'symbol': clean_symbol}
     else:
-        print(f"Prediction failed: {result['error']}")
+        print(f"Using existing cached data: {raw_path}")
 
-    print()
+    # Load raw data and engineer features once
+    raw_df = pd.read_csv(raw_path)
+    featured_df, _ = engineer_features(raw_df)
+
+    results = {'symbol': clean_symbol}
+
+    if mode in ['both', 'direction']:
+        results['direction'] = predict_direction(clean_symbol, featured_data=featured_df)
+
+    if mode in ['both', 'ohlc']:
+        results['ohlc'] = predict_ohlc(clean_symbol, featured_data=featured_df, raw_df=raw_df)
+
+    return results
+
+
+# Backward compatibility alias
+def predict_stock_from_file(symbol):
+    """Backward-compatible alias for directional prediction from file."""
+    return predict_direction(symbol)
+
+
+def print_prediction_report(results, mode="both"):
+    """Print a clean, formatted report of the prediction results."""
+    symbol = results.get('symbol', 'UNKNOWN')
+
+    if 'error' in results:
+        print(f"[!] Error predicting {symbol}: {results['error']}")
+        return
+
     print("=" * 70)
-    print("Process Complete!")
-    print("To predict another stock, run: python auto_predict.py SYMBOL")
-    print("Example: python auto_predict.py AGYS")
-    print("Data saved to: src/stockmarketai/data/raw/{SYMBOL}.csv")
-    print("You can now use this data for backtesting or other analyses")
+    print(f"StockMarketAI: Consolidated Forecast Report for {symbol}")
     print("=" * 70)
+
+    # 1. Directional Prediction
+    if 'direction' in results:
+        d = results['direction']
+        if 'error' in d:
+            print(f"[!] Direction Forecast Failed: {d['error']}")
+        else:
+            print("\n[LEVEL 1] DIRECTIONAL FORECAST (Classification)")
+            print(f"   Date:                   {d['latest_date']}")
+            print(f"   Forecast Direction:     {d['prediction_label']}")
+            print(f"   Model Confidence:       {d['confidence']}")
+            print(f"   Market Sentiment:       {d['market_sentiment']}")
+            print(f"   Historical Up Ratio:    {d['overall_up_probability']}")
+            print(f"   Samples Evaluated:      {d['total_samples']}")
+
+    # 2. OHLC Regression
+    if 'ohlc' in results:
+        o = results['ohlc']
+        if 'error' in o:
+            print(f"[!] OHLC Forecast Failed: {o['error']}")
+        else:
+            change_sign = "+" if o['expected_change'] >= 0 else ""
+            print("\n[LEVEL 2] PRICE TARGET FORECAST (OHLC Regression)")
+            print(f"   Forecast Date:          {o['prediction_date']}")
+            print(f"   Today's Close:          ${o['today_close']:.2f}")
+            print(f"   Tomorrow's Open:        ${o['tomorrow_open']:.2f}")
+            print(f"   Tomorrow's High:        ${o['tomorrow_high']:.2f}")
+            print(f"   Tomorrow's Low:         ${o['tomorrow_low']:.2f}")
+            print(f"   Tomorrow's Close:       ${o['tomorrow_close']:.2f}")
+            print(f"   Expected Price Move:    {change_sign}${o['expected_change']:.2f} ({change_sign}{o['expected_pct_change']:.2f}%)")
+
+    print("\n" + "=" * 70)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="StockMarketAI: Consolidated Directional & OHLC Stock Prediction"
+    )
+    parser.add_argument(
+        "symbol",
+        nargs="?",
+        default=None,
+        help="Stock symbol to predict (e.g., MSFT, AAPL, RELIANCE.NS)"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["both", "direction", "ohlc"],
+        default="both",
+        help="Prediction mode: 'both' (default), 'direction', or 'ohlc'"
+    )
+    parser.add_argument(
+        "--period",
+        default="2y",
+        help="Historical data duration (default: '2y')"
+    )
+    parser.add_argument(
+        "--force-download",
+        action="store_true",
+        help="Re-download historical data even if local CSV already exists"
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run in interactive prompt mode"
+    )
+
+    args = parser.parse_args()
+
+    # Show available local stocks
+    raw_dir = "src/stockmarketai/data/raw/"
+    if os.path.exists(raw_dir):
+        stocks = [f.replace('.csv', '') for f in os.listdir(raw_dir) if f.endswith('.csv')]
+    else:
+        stocks = []
+
+    if args.interactive:
+        print("=" * 70)
+        print("StockMarketAI: Interactive Auto-Predict Terminal")
+        print("=" * 70)
+        if stocks:
+            print(f"Locally available stocks: {', '.join(stocks[:10])}{'...' if len(stocks) > 10 else ''}")
+        print("Enter 'quit' or 'exit' to terminate.")
+        print()
+
+        while True:
+            try:
+                user_sym = input("Enter stock symbol (e.g., MSFT, AAPL, RELIANCE.NS): ").strip()
+                if not user_sym:
+                    continue
+                if user_sym.lower() in ['quit', 'exit', 'q']:
+                    print("Exiting.")
+                    break
+                res = auto_predict_stock(user_sym, mode=args.mode, period=args.period, force_download=args.force_download)
+                print_prediction_report(res, mode=args.mode)
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting.")
+                break
+        return
+
+    # Non-interactive CLI invocation
+    target_symbol = args.symbol
+    if not target_symbol:
+        target_symbol = "MSFT"  # Standard demo fallback
+        print(f"No symbol specified, running demonstration on default: {target_symbol}")
+        print("Usage: python auto_predict.py <SYMBOL> [--mode {both,direction,ohlc}] [--period 2y]")
+        print()
+
+    res = auto_predict_stock(
+        target_symbol,
+        mode=args.mode,
+        period=args.period,
+        force_download=args.force_download
+    )
+    print_prediction_report(res, mode=args.mode)
+
 
 if __name__ == "__main__":
     main()

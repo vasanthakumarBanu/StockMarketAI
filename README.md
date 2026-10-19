@@ -242,6 +242,10 @@ python -m src.stockmarketai.cli.predict_any_stock "Tata Motors"
 python -m src.stockmarketai.cli.predict_any_stock "SRM Energy"
 python -m src.stockmarketai.cli.predict_any_stock RELIANCE.NS
 
+# Consolidated auto-download & prediction (Direction + OHLC targets)
+python auto_predict.py MSFT
+python auto_predict.py RELIANCE.NS --mode ohlc
+
 # Event-driven backtesting with dynamic ATR stops
 python run_backtest.py MSFT --use-atr
 
@@ -346,6 +350,7 @@ StockMarketAI supports all ticker formats accessible through Yahoo Finance:
 StockMarketAI/
 ├── README.md                           # Single authoritative project & phases documentation
 ├── requirements.txt                    # Python dependencies
+├── auto_predict.py                     # Consolidated auto-download, direction & OHLC predictor
 ├── regression.py                       # Standalone OHLC price regression training engine
 ├── classification.py                   # Standalone directional classification training engine
 ├── run_api.py                          # Unified launcher for REST API & Web Dashboard
