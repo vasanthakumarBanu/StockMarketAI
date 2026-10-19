@@ -329,10 +329,8 @@ StockMarketAI/
 ├── run_api.py                          # Unified launcher for REST API & Web Dashboard
 ├── run_backtest.py                     # CLI launcher for Phase 4 Backtesting
 ├── complete_workflow_fixed.py          # Full model training & prediction CLI
-├── ABOUT_STOCKMARKETAI.md              # This comprehensive guide
-├── PHASE4_COMPLETED.md                 # Technical specification of Phase 4 Backtesting
-├── PHASE5_COMPLETED.md                 # Technical specification of Phase 5 REST API & Dashboard
-├── PHASE6_COMPLETED.md                 # Technical specification of Phase 6 DLL & Brokers
+├── ABOUT_STOCKMARKETAI.md              # Comprehensive application and feature guide
+├── PROJECT_PHASES.md                   # Single unified technical specification for all phases (1 to 7)
 │
 ├── models_complete/                    # Saved scikit-learn models & scalers
 │   ├── tomorrow_open_*.pkl

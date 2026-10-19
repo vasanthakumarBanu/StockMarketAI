@@ -119,6 +119,14 @@ python -m unittest discover tests
 
 ---
 
+## 📚 Project Documentation & Phases
+
+All technical specifications, verification benchmarks, and implementation details for every phase are consolidated into a single master document:
+- **[PROJECT_PHASES.md](PROJECT_PHASES.md)**: Exhaustive documentation covering Phase 1 (Universal Data Engine), Phase 2 (65+ Features), Phase 3 (Multi-Level ML), Phase 4 (Event-Driven Backtesting), Phase 5 (REST API & Dashboard), Phase 6 (C-ABI DLL & Broker Gateways), and Phase 7 (Flutter App).
+- **[ABOUT_STOCKMARKETAI.md](ABOUT_STOCKMARKETAI.md)**: High-level architectural overview, feature guide, and operational manual.
+
+---
+
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.(Initial commit: StockMarketAI Production AI & Trading Platform)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
