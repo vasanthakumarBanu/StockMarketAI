@@ -158,7 +158,7 @@ def predict_ohlc(symbol):
 
         if not all(os.path.exists(p) for p in [scaler_path, features_path]):
             return {
-                'error': "Regression model components not found. Please run phase3_regression.py first.",
+                'error': "Regression model components not found. Please run regression.py first.",
                 'symbol': symbol
             }
 

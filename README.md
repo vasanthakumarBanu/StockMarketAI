@@ -251,6 +251,12 @@ python run_backtest.py AAPL --strategy direction --initial-capital 25000 --stop-
 # Retrain full model pipeline for any stock
 python -m src.stockmarketai.pipelines.complete_workflow AGYS
 
+# Multi-target OHLC regression training
+python regression.py
+
+# Directional trend classification training
+python classification.py
+
 # Run the complete automated test suite
 python -m unittest discover tests
 ```
@@ -340,6 +346,8 @@ StockMarketAI supports all ticker formats accessible through Yahoo Finance:
 StockMarketAI/
 ├── README.md                           # Single authoritative project & phases documentation
 ├── requirements.txt                    # Python dependencies
+├── regression.py                       # Standalone OHLC price regression training engine
+├── classification.py                   # Standalone directional classification training engine
 ├── run_api.py                          # Unified launcher for REST API & Web Dashboard
 ├── run_backtest.py                     # CLI launcher for event-driven backtesting
 ├── start_stockmarketai.bat             # One-click Windows application launcher
