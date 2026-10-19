@@ -1,2 +1,0 @@
-- [StockMarketAI Live Data Setup Progress](stockmarketai_live_data_setup.md) — Detailed progress and steps taken for setting up live data fetching and prediction.
-- [StockMarketAI Project Continuation Guide](stockmarketai_project_continuation.md) — Instructions for resuming and continuing the StockMarketAI project development.
