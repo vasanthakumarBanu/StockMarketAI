@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 StockMarketAI: Consolidated Automatic Stock Prediction
-Downloads live historical data from Yahoo Finance and performs:
+Downloads live historical data dynamically from Yahoo Finance and performs:
   1. Level 1 Directional Forecast (Up/Down classification & confidence)
   2. Level 2 Price Target Forecast (Tomorrow's Open, High, Low, Close regression)
 """
@@ -23,21 +23,33 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         pass
 
 
+def resolve_ticker(query: str) -> str:
+    """Resolve natural company names or raw symbols to Yahoo Finance tickers."""
+    try:
+        from src.stockmarketai.data.search import resolve_symbol_or_search
+        symbol, name = resolve_symbol_or_search(query)
+        if name and name != symbol:
+            print(f"Resolved '{query}' -> {symbol} ({name})")
+        return symbol
+    except Exception:
+        return query.strip().upper()
+
+
 def download_and_save_stock_data(symbol, period="2y", save_dir="src/stockmarketai/data/raw/"):
     """
-    Download stock data from Yahoo Finance and save in the required format.
+    Download stock data dynamically from Yahoo Finance and save in the required format.
 
     Args:
-        symbol (str): Stock ticker (e.g., 'MSFT', 'AAPL', 'RELIANCE.NS')
+        symbol (str): Stock ticker or resolved name (e.g., 'MSFT', 'AAPL', 'RELIANCE.NS')
         period (str): Data duration ('1mo', '3mo', '6mo', '1y', '2y', '5y')
         save_dir (str): Directory where CSV will be saved
 
     Returns:
-        str: Absolute or relative path to saved CSV file, or None if failed
+        str: Path to saved CSV file, or None if failed
     """
     try:
         clean_symbol = symbol.strip().upper()
-        print(f"Downloading {clean_symbol} data from Yahoo Finance (period: {period})...")
+        print(f"Fetching live market data for {clean_symbol} from Yahoo Finance (period: {period})...")
 
         ticker = yf.Ticker(clean_symbol)
         hist = ticker.history(period=period)
@@ -46,7 +58,7 @@ def download_and_save_stock_data(symbol, period="2y", save_dir="src/stockmarketa
             print(f"[!] No market data found for symbol '{clean_symbol}'")
             return None
 
-        print(f"Downloaded {len(hist)} rows of data for {clean_symbol}")
+        print(f"Retrieved {len(hist)} historical bars for {clean_symbol}")
 
         hist.reset_index(inplace=True)
 
@@ -74,7 +86,7 @@ def download_and_save_stock_data(symbol, period="2y", save_dir="src/stockmarketa
         save_path = os.path.join(save_dir, f"{clean_symbol}.csv")
         df.to_csv(save_path, index=False)
 
-        print(f"Saved data to: {save_path}")
+        print(f"Live data synchronized: {save_path}")
         print(f"   Date range: {df['Date'].min().strftime('%Y-%m-%d')} to {df['Date'].max().strftime('%Y-%m-%d')}")
         return save_path
 
@@ -177,10 +189,9 @@ def predict_direction(symbol, featured_data=None, model_dir="models/"):
         if featured_data is None:
             raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
             if not os.path.exists(raw_path):
-                return {
-                    'error': f"Raw data for {clean_symbol} not found. Run download first.",
-                    'symbol': clean_symbol
-                }
+                raw_path = download_and_save_stock_data(clean_symbol)
+                if not raw_path or not os.path.exists(raw_path):
+                    return {'error': f"Failed to retrieve dynamic data for {clean_symbol}.", 'symbol': clean_symbol}
             df = pd.read_csv(raw_path)
             featured_data, _ = engineer_features(df)
 
@@ -261,10 +272,9 @@ def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regr
         if featured_data is None or raw_df is None:
             raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
             if not os.path.exists(raw_path):
-                return {
-                    'error': f"Raw data for {clean_symbol} not found. Run download first.",
-                    'symbol': clean_symbol
-                }
+                raw_path = download_and_save_stock_data(clean_symbol)
+                if not raw_path or not os.path.exists(raw_path):
+                    return {'error': f"Failed to retrieve dynamic data for {clean_symbol}.", 'symbol': clean_symbol}
             raw_df = pd.read_csv(raw_path)
             featured_data, _ = engineer_features(raw_df)
 
@@ -314,49 +324,49 @@ def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regr
         return {'error': str(e), 'symbol': clean_symbol}
 
 
-def auto_predict_stock(symbol, mode="both", period="2y", force_download=False):
+def auto_predict_stock(symbol, mode="both", period="2y", use_cache=False):
     """
     Unified end-to-end stock prediction pipeline.
-    Downloads data (if requested/needed), computes features once, and runs
-    Direction Classification and/or OHLC Regression.
+    Dynamically resolves symbol, downloads live data, computes features,
+    and runs Direction Classification and/or OHLC Regression.
 
     Args:
-        symbol (str): Stock symbol (e.g. 'MSFT')
+        symbol (str): Stock symbol or company name (e.g. 'MSFT', 'Tata Motors')
         mode (str): 'both', 'direction', or 'ohlc'
         period (str): Historical period to download ('2y', '1y', etc.)
-        force_download (bool): If True, re-downloads even if CSV exists
+        use_cache (bool): If True, re-uses local CSV if present
 
     Returns:
         dict: Consolidated results dictionary
     """
-    clean_symbol = symbol.strip().upper()
-    raw_path = f"src/stockmarketai/data/raw/{clean_symbol}.csv"
+    resolved_sym = resolve_ticker(symbol)
+    raw_path = f"src/stockmarketai/data/raw/{resolved_sym}.csv"
 
-    if force_download or not os.path.exists(raw_path):
-        csv_path = download_and_save_stock_data(clean_symbol, period=period)
+    if not use_cache or not os.path.exists(raw_path):
+        csv_path = download_and_save_stock_data(resolved_sym, period=period)
         if csv_path is None:
-            return {'error': f"Failed to download market data for {clean_symbol}", 'symbol': clean_symbol}
+            return {'error': f"Failed to download dynamic market data for {resolved_sym}", 'symbol': resolved_sym}
     else:
-        print(f"Using existing cached data: {raw_path}")
+        print(f"Using local cached data: {raw_path}")
 
-    # Load raw data and engineer features once
+    # Load raw data and engineer features
     raw_df = pd.read_csv(raw_path)
     featured_df, _ = engineer_features(raw_df)
 
-    results = {'symbol': clean_symbol}
+    results = {'symbol': resolved_sym}
 
     if mode in ['both', 'direction']:
-        results['direction'] = predict_direction(clean_symbol, featured_data=featured_df)
+        results['direction'] = predict_direction(resolved_sym, featured_data=featured_df)
 
     if mode in ['both', 'ohlc']:
-        results['ohlc'] = predict_ohlc(clean_symbol, featured_data=featured_df, raw_df=raw_df)
+        results['ohlc'] = predict_ohlc(resolved_sym, featured_data=featured_df, raw_df=raw_df)
 
     return results
 
 
 # Backward compatibility alias
 def predict_stock_from_file(symbol):
-    """Backward-compatible alias for directional prediction from file."""
+    """Backward-compatible alias for directional prediction."""
     return predict_direction(symbol)
 
 
@@ -407,13 +417,13 @@ def print_prediction_report(results, mode="both"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="StockMarketAI: Consolidated Directional & OHLC Stock Prediction"
+        description="StockMarketAI: Dynamic Directional & OHLC Stock Prediction"
     )
     parser.add_argument(
         "symbol",
         nargs="?",
         default=None,
-        help="Stock symbol to predict (e.g., MSFT, AAPL, RELIANCE.NS)"
+        help="Stock ticker or company name (e.g., MSFT, AAPL, 'Tata Motors', RELIANCE.NS)"
     )
     parser.add_argument(
         "--mode",
@@ -427,9 +437,9 @@ def main():
         help="Historical data duration (default: '2y')"
     )
     parser.add_argument(
-        "--force-download",
+        "--cache",
         action="store_true",
-        help="Re-download historical data even if local CSV already exists"
+        help="Use local cached data if available instead of fresh dynamic download"
     )
     parser.add_argument(
         "--interactive",
@@ -439,31 +449,22 @@ def main():
 
     args = parser.parse_args()
 
-    # Show available local stocks
-    raw_dir = "src/stockmarketai/data/raw/"
-    if os.path.exists(raw_dir):
-        stocks = [f.replace('.csv', '') for f in os.listdir(raw_dir) if f.endswith('.csv')]
-    else:
-        stocks = []
-
     if args.interactive:
         print("=" * 70)
-        print("StockMarketAI: Interactive Auto-Predict Terminal")
+        print("StockMarketAI: Interactive Dynamic Prediction Terminal")
         print("=" * 70)
-        if stocks:
-            print(f"Locally available stocks: {', '.join(stocks[:10])}{'...' if len(stocks) > 10 else ''}")
         print("Enter 'quit' or 'exit' to terminate.")
         print()
 
         while True:
             try:
-                user_sym = input("Enter stock symbol (e.g., MSFT, AAPL, RELIANCE.NS): ").strip()
+                user_sym = input("Enter stock symbol or company name: ").strip()
                 if not user_sym:
                     continue
                 if user_sym.lower() in ['quit', 'exit', 'q']:
                     print("Exiting.")
                     break
-                res = auto_predict_stock(user_sym, mode=args.mode, period=args.period, force_download=args.force_download)
+                res = auto_predict_stock(user_sym, mode=args.mode, period=args.period, use_cache=args.cache)
                 print_prediction_report(res, mode=args.mode)
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting.")
@@ -473,16 +474,23 @@ def main():
     # Non-interactive CLI invocation
     target_symbol = args.symbol
     if not target_symbol:
-        target_symbol = "MSFT"  # Standard demo fallback
-        print(f"No symbol specified, running demonstration on default: {target_symbol}")
-        print("Usage: python auto_predict.py <SYMBOL> [--mode {both,direction,ohlc}] [--period 2y]")
-        print()
+        if sys.stdin.isatty():
+            try:
+                target_symbol = input("Enter stock symbol or company name (e.g., MSFT, AAPL, RELIANCE.NS): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting.")
+                return
+
+        if not target_symbol:
+            print("Usage: python auto_predict.py <SYMBOL> [--mode {both,direction,ohlc}] [--period 2y]")
+            print("Example: python auto_predict.py NVDA")
+            return
 
     res = auto_predict_stock(
         target_symbol,
         mode=args.mode,
         period=args.period,
-        force_download=args.force_download
+        use_cache=args.cache
     )
     print_prediction_report(res, mode=args.mode)
 

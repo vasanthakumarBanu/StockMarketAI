@@ -2,33 +2,116 @@
 """
 StockMarketAI: Multi-Target OHLC Regression Engine
 Predicts tomorrow's Open, High, Low, and Close values using quantitative technical indicators.
-Consolidated, production-grade regression training and evaluation pipeline.
+Consolidated, production-grade regression training and evaluation pipeline with dynamic data ingestion.
 """
 
 import argparse
 import os
+import sys
 import warnings
 import joblib
 import numpy as np
 import pandas as pd
+import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 
+# Ensure UTF-8 output encoding on Windows consoles
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Suppress non-critical warnings
 warnings.filterwarnings("ignore")
 
 
-def load_and_prepare_data(data_path: str):
-    """Load and prepare market data for OHLC multi-target regression."""
-    if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Data file not found at: {data_path}")
+def engineer_17_features(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Engineer the 17 quantitative indicators from raw OHLCV market data."""
+    df = raw_df.copy()
 
-    print(f"Loading data from {data_path}...")
-    df = pd.read_csv(data_path, index_col="Date", parse_dates=True)
+    if "Date" in df.columns:
+        if hasattr(df["Date"].dt, "tz") and df["Date"].dt.tz is not None:
+            df["Date"] = df["Date"].dt.tz_convert("UTC").dt.tz_localize(None)
+        else:
+            df["Date"] = pd.to_datetime(df["Date"])
+        df.set_index("Date", inplace=True)
+
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # 1. Return and Volatility
+    df["Daily_Return"] = df["Close"].pct_change()
+    df["Volatility_20"] = df["Daily_Return"].rolling(20).std()
+
+    # 2. Moving Averages
+    df["MA_20"] = df["Close"].rolling(20).mean()
+    df["MA_50"] = df["Close"].rolling(50).mean()
+    df["MA_200"] = df["Close"].rolling(200).mean()
+
+    # 3. RSI (14-period)
+    delta = df["Close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / (loss + 1e-9)
+    df["RSI_14"] = 100 - (100 / (1 + rs))
+
+    # 4. MACD (12, 26, 9)
+    exp1 = df["Close"].ewm(span=12, adjust=False).mean()
+    exp2 = df["Close"].ewm(span=26, adjust=False).mean()
+    df["MACD"] = exp1 - exp2
+    df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
+
+    # 5. Bollinger Bands (20-period)
+    df["BB_Middle"] = df["Close"].rolling(20).mean()
+    bb_std = df["Close"].rolling(20).std()
+    df["BB_Upper"] = df["BB_Middle"] + (bb_std * 2)
+    df["BB_Lower"] = df["BB_Middle"] - (bb_std * 2)
+
+    return df
+
+
+def download_dynamic_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+    """Dynamically download stock data from Yahoo Finance."""
+    clean_symbol = symbol.strip().upper()
+    print(f"Dynamically downloading {clean_symbol} data from Yahoo Finance (period: {period})...")
+
+    ticker = yf.Ticker(clean_symbol)
+    hist = ticker.history(period=period)
+
+    if hist.empty:
+        raise ValueError(f"No market data found for symbol '{clean_symbol}'")
+
+    print(f"Downloaded {len(hist)} rows for {clean_symbol}")
+    hist.reset_index(inplace=True)
+
+    required_cols = ["Date", "Open", "High", "Low", "Close", "Volume"]
+    missing = [c for c in required_cols if c not in hist.columns]
+    if missing:
+        raise ValueError(f"Missing columns from Yahoo Finance: {missing}")
+
+    return hist[required_cols].copy()
+
+
+def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str = "2y"):
+    """Load or dynamically download and prepare market data for OHLC multi-target regression."""
+    if data_path and os.path.exists(data_path):
+        print(f"Loading data from {data_path}...")
+        df = pd.read_csv(data_path, index_col="Date", parse_dates=True)
+    else:
+        target_sym = symbol or "RELIANCE.NS"
+        print(f"No static dataset file provided; dynamically fetching live data for {target_sym}...")
+        raw_df = download_dynamic_data(target_sym, period=period)
+        df = engineer_17_features(raw_df)
+
     print(f"Loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-    print(f"Date range: {df.index.min().strftime('%Y-%m-%d')} to {df.index.max().strftime('%Y-%m-%d')}")
+    if hasattr(df.index, "min") and hasattr(df.index.min(), "strftime"):
+        print(f"Date range: {df.index.min().strftime('%Y-%m-%d')} to {df.index.max().strftime('%Y-%m-%d')}")
 
     # Create tomorrow's OHLC targets (shift by -1)
     df["Tomorrow_Open"] = df["Open"].shift(-1)
@@ -60,10 +143,9 @@ def load_and_prepare_data(data_path: str):
 
     # Handle missing values (from rolling indicator lookbacks)
     missing_before = X.isnull().sum().sum()
-    print(f"Handling missing values...")
     X = X.ffill().bfill()
     missing_after = X.isnull().sum().sum()
-    print(f"Missing values before: {missing_before}, after: {missing_after}")
+    print(f"Missing values handled (before: {missing_before}, after: {missing_after})")
 
     # Define targets
     targets = ["Tomorrow_Open", "Tomorrow_High", "Tomorrow_Low", "Tomorrow_Close"]
@@ -112,12 +194,24 @@ def train_evaluate_model(model, X_train, X_test, y_train, y_test, model_name: st
 
 
 def main():
-    parser = argparse.ArgumentParser(description="StockMarketAI: Regression Engine for OHLC Prediction")
+    parser = argparse.ArgumentParser(description="StockMarketAI: Dynamic Regression Engine for OHLC Prediction")
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default="RELIANCE.NS",
+        help="Stock ticker to dynamically download and train on (default: RELIANCE.NS)"
+    )
     parser.add_argument(
         "--data",
         type=str,
-        default="src/stockmarketai/data/processed/reliance_ml_ready.csv",
-        help="Path to feature-engineered dataset CSV (default: src/stockmarketai/data/processed/reliance_ml_ready.csv)"
+        default=None,
+        help="Optional path to custom feature-engineered dataset CSV (bypasses dynamic download)"
+    )
+    parser.add_argument(
+        "--period",
+        type=str,
+        default="2y",
+        help="Data duration for dynamic download (default: 2y)"
     )
     parser.add_argument(
         "--output-dir",
@@ -134,13 +228,17 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("StockMarketAI: OHLC Multi-Target Regression Engine")
+    print("StockMarketAI: Dynamic OHLC Multi-Target Regression Engine")
     print("=" * 70)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # 1. Load and prepare data
-    X, y, feature_columns, targets = load_and_prepare_data(args.data)
+    # 1. Load or dynamically download and prepare data
+    X, y, feature_columns, targets = load_and_prepare_data(
+        data_path=args.data,
+        symbol=args.symbol,
+        period=args.period
+    )
 
     # 2. Temporal train/test split (no lookahead bias)
     split_idx = int(len(X) * args.split)
@@ -158,7 +256,7 @@ def main():
     X_test_scaled = scaler.transform(X_test)
     print("OK: Features standardized (mean=0, std=1)")
 
-    # 4. Model constructors (creates fresh instances per target to avoid target contamination)
+    # 4. Model constructors
     model_types = {
         "Linear Regression": LinearRegression,
         "Random Forest Regressor": lambda: RandomForestRegressor(

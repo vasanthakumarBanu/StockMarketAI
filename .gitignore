@@ -64,3 +64,13 @@ flutter_app/ios/Flutter/Generated.xcconfig
 # Scratch and Temporary debug scripts
 scratch/
 *.log
+
+# Dynamic stock market data caches & runtime results (keep folders with .gitkeep)
+src/stockmarketai/data/raw/*.csv
+src/stockmarketai/data/processed/*.csv
+src/backtesting/results/*.csv
+src/backtesting/results/*.png
+src/backtesting/results/*.md
+!src/stockmarketai/data/raw/.gitkeep
+!src/stockmarketai/data/processed/.gitkeep
+!src/backtesting/results/.gitkeep
