@@ -66,7 +66,8 @@ class AngelOneConnector(BaseBrokerConnector):
         from src.stockmarketai.service import get_service
         service = get_service()
         df = service.get_market_data(symbol)
-        last_row = df.iloc[-1]
+        df_valid = df.dropna(subset=["Close", "Open", "High", "Low"])
+        last_row = df_valid.iloc[-1]
         close = float(last_row["Close"])
         return {
             "symbol": symbol.upper(),

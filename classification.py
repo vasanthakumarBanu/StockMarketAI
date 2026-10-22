@@ -16,6 +16,7 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -118,7 +119,8 @@ def download_dynamic_data(symbol: str, period: str = "2y") -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing columns from Yahoo Finance: {missing}")
 
-    return hist[required_cols].copy()
+    clean_df = hist[required_cols].dropna(subset=["Open", "High", "Low", "Close"]).copy()
+    return clean_df
 
 
 def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str = "2y"):
@@ -314,6 +316,16 @@ def main():
             random_state=42,
             class_weight="balanced" if use_balanced else None,
             n_jobs=-1
+        ),
+        "Neural Network (ANN)": MLPClassifier(
+            hidden_layer_sizes=(64, 32),
+            activation="relu",
+            solver="adam",
+            alpha=0.01,
+            max_iter=500,
+            early_stopping=True,
+            n_iter_no_change=15,
+            random_state=42
         )
     }
 
@@ -355,21 +367,27 @@ def main():
     # 7. Persist Models and Artifacts
     print(f"\nSaving models and artifacts to '{args.output_dir}'...")
 
-    # Save both models for flexibility
+    # Save all models for flexibility and champion model as best_model.pkl
     rf_path = os.path.join(args.output_dir, "stock_rf_model.pkl")
     lr_path = os.path.join(args.output_dir, "stock_lr_model.pkl")
+    ann_path = os.path.join(args.output_dir, "stock_ann_model.pkl")
+    best_path = os.path.join(args.output_dir, "best_model.pkl")
     scaler_path = os.path.join(args.output_dir, "feature_scaler.pkl")
     features_path = os.path.join(args.output_dir, "feature_columns.pkl")
     summary_csv_path = os.path.join(args.output_dir, "classification_summary.csv")
 
     joblib.dump(results["Random Forest"]["model"], rf_path)
     joblib.dump(results["Logistic Regression"]["model"], lr_path)
+    joblib.dump(results["Neural Network (ANN)"]["model"], ann_path)
+    joblib.dump(results[best_model_name]["model"], best_path)
     joblib.dump(scaler, scaler_path)
     joblib.dump(feature_columns, features_path)
     summary_df.to_csv(summary_csv_path, index=False)
 
     print(f"OK: Saved Random Forest model:     {rf_path}")
     print(f"OK: Saved Logistic Regression model: {lr_path}")
+    print(f"OK: Saved Neural Network (ANN) model:{ann_path}")
+    print(f"OK: Saved Best Model ({best_model_name}): {best_path}")
     print(f"OK: Saved feature scaler:           {scaler_path}")
     print(f"OK: Saved feature columns:          {features_path}")
     print(f"OK: Saved comparison summary:       {summary_csv_path}")

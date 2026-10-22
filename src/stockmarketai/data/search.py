@@ -126,13 +126,26 @@ def search_stock_symbols(query: str, max_results: int = 8) -> List[Dict[str, Any
     return results
 
 
+COMMON_COMPANY_ALIASES = {
+    "srm energy": ("SRMENERGY.BO", {"symbol": "SRMENERGY.BO", "name": "SRM Energy Limited", "market": "India (BSE)", "badge": "[IN-BSE]"}),
+    "srm energy ltd": ("SRMENERGY.BO", {"symbol": "SRMENERGY.BO", "name": "SRM Energy Limited", "market": "India (BSE)", "badge": "[IN-BSE]"}),
+    "srm energy limited": ("SRMENERGY.BO", {"symbol": "SRMENERGY.BO", "name": "SRM Energy Limited", "market": "India (BSE)", "badge": "[IN-BSE]"}),
+    "netflix": ("NFLX", {"symbol": "NFLX", "name": "Netflix, Inc.", "market": "US (NASDAQ)", "badge": "[US-NASDAQ]"}),
+    "netflix inc": ("NFLX", {"symbol": "NFLX", "name": "Netflix, Inc.", "market": "US (NASDAQ)", "badge": "[US-NASDAQ]"}),
+    "microsoft": ("MSFT", {"symbol": "MSFT", "name": "Microsoft Corporation", "market": "US (NASDAQ)", "badge": "[US-NASDAQ]"}),
+    "apple": ("AAPL", {"symbol": "AAPL", "name": "Apple Inc.", "market": "US (NASDAQ)", "badge": "[US-NASDAQ]"}),
+    "reliance": ("RELIANCE.NS", {"symbol": "RELIANCE.NS", "name": "Reliance Industries Limited", "market": "India (NSE)", "badge": "[IN-NSE]"}),
+}
+
+
 def resolve_symbol_or_search(query: str) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     Intelligently resolves a user query to a valid trading ticker.
     
     1. If query is already an exact ticker with no spaces (e.g. 'MSFT', 'AAPL', 'SRMENERGY.BO'):
        Returns the ticker directly.
-    2. If query contains company names (e.g. 'SRM Energy Ltd', 'Tata Motors', 'State Bank of India'):
+    2. If query matches a known common company alias, returns immediately.
+    3. If query contains company names (e.g. 'Tata Motors', 'State Bank of India'):
        Searches Yahoo Finance and selects the most relevant equity ticker.
     
     Returns:
@@ -141,6 +154,10 @@ def resolve_symbol_or_search(query: str) -> Tuple[str, Optional[Dict[str, Any]]]
     raw_query = (query or "").strip()
     if not raw_query:
         return "MSFT", None
+
+    norm_query = raw_query.lower()
+    if norm_query in COMMON_COMPANY_ALIASES:
+        return COMMON_COMPANY_ALIASES[norm_query]
 
     clean_symbol = raw_query.upper()
 

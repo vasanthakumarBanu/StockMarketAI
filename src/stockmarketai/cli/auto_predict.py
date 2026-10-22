@@ -184,7 +184,14 @@ def predict_direction(symbol, featured_data=None, model_dir="models/"):
     """
     clean_symbol = symbol.strip().upper()
     try:
-        model_path = os.path.join(model_dir, "stock_lr_model.pkl")
+        model_path = os.path.join(model_dir, "best_model.pkl")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(model_dir, "stock_lr_model.pkl")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(model_dir, "stock_ann_model.pkl")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(model_dir, "stock_rf_model.pkl")
+
         scaler_path = os.path.join(model_dir, "feature_scaler.pkl")
         features_path = os.path.join(model_dir, "feature_columns.pkl")
 
@@ -201,6 +208,7 @@ def predict_direction(symbol, featured_data=None, model_dir="models/"):
                 if not raw_path or not os.path.exists(raw_path):
                     return {'error': f"Failed to retrieve dynamic data for {clean_symbol}.", 'symbol': clean_symbol}
             df = pd.read_csv(raw_path)
+            df = df.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
             featured_data, _ = engineer_features(df)
 
         model = joblib.load(model_path)
@@ -284,6 +292,7 @@ def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regr
                 if not raw_path or not os.path.exists(raw_path):
                     return {'error': f"Failed to retrieve dynamic data for {clean_symbol}.", 'symbol': clean_symbol}
             raw_df = pd.read_csv(raw_path)
+            raw_df = raw_df.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
             featured_data, _ = engineer_features(raw_df)
 
         scaler = joblib.load(scaler_path)
@@ -292,24 +301,29 @@ def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regr
         X = featured_data[feature_cols]
         X_scaled = scaler.transform(X)
 
-        model_files = {
-            'Tomorrow_Open': 'tomorrow_open_linear_regression.pkl',
-            'Tomorrow_High': 'tomorrow_high_linear_regression.pkl',
-            'Tomorrow_Low': 'tomorrow_low_linear_regression.pkl',
-            'Tomorrow_Close': 'tomorrow_close_linear_regression.pkl'
-        }
-
         predictions = {}
-        for target_name, filename in model_files.items():
-            path = os.path.join(model_dir, filename)
-            if not os.path.exists(path):
-                return {'error': f"Missing model file: {path}", 'symbol': clean_symbol}
-            model = joblib.load(path)
-            pred = model.predict(X_scaled)[-1]
-            predictions[target_name] = float(pred)
+        for target_name in ['Tomorrow_Open', 'Tomorrow_High', 'Tomorrow_Low', 'Tomorrow_Close']:
+            target_key = target_name.lower()
+            candidates = [
+                f"{target_key}_best.pkl",
+                f"{target_key}_linear_regression.pkl",
+                f"{target_key}_neural_network_ann.pkl",
+                f"{target_key}_random_forest_regressor.pkl"
+            ]
+            loaded = False
+            for c in candidates:
+                p = os.path.join(model_dir, c)
+                if os.path.exists(p):
+                    model = joblib.load(p)
+                    pred = model.predict(X_scaled)[-1]
+                    predictions[target_name] = float(pred)
+                    loaded = True
+                    break
+            if not loaded:
+                return {'error': f"Missing model for target: {target_name}", 'symbol': clean_symbol}
 
         latest_date = featured_data.index[-1]
-        today_close = float(raw_df['Close'].iloc[-1])
+        today_close = float(raw_df['Close'].dropna().iloc[-1])
         predicted_close = predictions['Tomorrow_Close']
         change = predicted_close - today_close
         pct_change = (change / (today_close + 1e-9)) * 100

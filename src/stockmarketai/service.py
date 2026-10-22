@@ -101,21 +101,28 @@ class StockMarketAIService:
             targets = ["Tomorrow_Open", "Tomorrow_High", "Tomorrow_Low", "Tomorrow_Close"]
             for target in targets:
                 target_key = target.lower()
-                lr_file = os.path.join(self.models_dir, f"{target_key}_linear_regression.pkl")
-                rf_file = os.path.join(self.models_dir, f"{target_key}_random_forest_regressor.pkl")
-
-                if os.path.exists(lr_file):
-                    self.models[target] = joblib.load(lr_file)
-                elif os.path.exists(rf_file):
-                    self.models[target] = joblib.load(rf_file)
+                candidates = [
+                    os.path.join(self.models_dir, f"{target_key}_best.pkl"),
+                    os.path.join(self.models_dir, f"{target_key}_linear_regression.pkl"),
+                    os.path.join(self.models_dir, f"{target_key}_neural_network_ann.pkl"),
+                    os.path.join(self.models_dir, f"{target_key}_random_forest_regressor.pkl")
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        self.models[target] = joblib.load(c)
+                        break
 
             # 5. Load Classification model for direction
-            clf_path = os.path.join(self.classification_dir, "stock_rf_model.pkl")
-            if not os.path.exists(clf_path):
-                clf_path = os.path.join(self.classification_dir, "stock_lr_model.pkl")
-
-            if os.path.exists(clf_path):
-                self.classification_model = joblib.load(clf_path)
+            clf_candidates = [
+                os.path.join(self.classification_dir, "best_model.pkl"),
+                os.path.join(self.classification_dir, "stock_ann_model.pkl"),
+                os.path.join(self.classification_dir, "stock_rf_model.pkl"),
+                os.path.join(self.classification_dir, "stock_lr_model.pkl")
+            ]
+            for c in clf_candidates:
+                if os.path.exists(c):
+                    self.classification_model = joblib.load(c)
+                    break
 
             logger.info(f"Loaded {len(self.models)} regression models and classification model.")
         except Exception as e:

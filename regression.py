@@ -15,6 +15,7 @@ import pandas as pd
 import yfinance as yf
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
+from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 
@@ -102,7 +103,8 @@ def download_dynamic_data(symbol: str, period: str = "2y") -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing columns from Yahoo Finance: {missing}")
 
-    return hist[required_cols].copy()
+    clean_df = hist[required_cols].dropna(subset=["Open", "High", "Low", "Close"]).copy()
+    return clean_df
 
 
 def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str = "2y"):
@@ -121,13 +123,14 @@ def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str
         print(f"Date range: {df.index.min().strftime('%Y-%m-%d')} to {df.index.max().strftime('%Y-%m-%d')}")
 
     # Create tomorrow's OHLC targets (shift by -1)
+    targets = ["Tomorrow_Open", "Tomorrow_High", "Tomorrow_Low", "Tomorrow_Close"]
     df["Tomorrow_Open"] = df["Open"].shift(-1)
     df["Tomorrow_High"] = df["High"].shift(-1)
     df["Tomorrow_Low"] = df["Low"].shift(-1)
     df["Tomorrow_Close"] = df["Close"].shift(-1)
 
-    # Drop the final row (has NaN targets due to shift)
-    df = df[:-1]
+    # Drop rows where targets are NaN (e.g. final shifted row or unclosed sessions)
+    df = df.dropna(subset=targets)
     print(f"After creating tomorrow targets: {df.shape[0]} rows")
 
     # Define features (19 technical indicators including VWAP)
@@ -274,6 +277,16 @@ def main():
             min_samples_leaf=2,
             random_state=42,
             n_jobs=-1
+        ),
+        "Neural Network (ANN)": lambda: MLPRegressor(
+            hidden_layer_sizes=(64, 32),
+            activation="relu",
+            solver="adam",
+            alpha=0.01,
+            max_iter=500,
+            early_stopping=True,
+            n_iter_no_change=15,
+            random_state=42
         )
     }
 
@@ -339,10 +352,16 @@ def main():
     print(f"\nSaving best models and scaler to '{args.output_dir}'...")
     for target_name in targets:
         model_info = best_models[target_name]
-        slug = model_info["model_name"].lower().replace(" ", "_")
+        slug = model_info["model_name"].lower().replace(" ", "_").replace("(", "").replace(")", "")
         model_filename = os.path.join(args.output_dir, f"{target_name.lower()}_{slug}.pkl")
+        best_alias = os.path.join(args.output_dir, f"{target_name.lower()}_best.pkl")
         joblib.dump(model_info["model"], model_filename)
-        print(f"OK: Saved {target_name} model: {model_filename}")
+        joblib.dump(model_info["model"], best_alias)
+        # Also persist Linear Regression version if available for backwards compatibility
+        if "Linear Regression" in all_results[target_name]:
+            lr_filename = os.path.join(args.output_dir, f"{target_name.lower()}_linear_regression.pkl")
+            joblib.dump(all_results[target_name]["Linear Regression"]["model"], lr_filename)
+        print(f"OK: Saved {target_name} model: {model_filename} (and {best_alias})")
 
     scaler_path = os.path.join(args.output_dir, "feature_scaler.pkl")
     features_path = os.path.join(args.output_dir, "feature_columns.pkl")

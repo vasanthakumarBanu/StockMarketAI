@@ -107,6 +107,9 @@ def download_stock_data(symbol, period="2y"):
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
+    # Drop any unfinalized or empty session rows where OHLC is NaN
+    df = df.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+
     # Sort by date (oldest first)
     df.sort_values('Date', inplace=True)
     df.reset_index(drop=True, inplace=True)
