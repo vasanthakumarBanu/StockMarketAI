@@ -341,6 +341,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("indMa20").textContent = `$${m.ma_20.toFixed(2)}`;
     document.getElementById("indMa50").textContent = `$${m.ma_50.toFixed(2)}`;
+
+    if (m.vwap !== undefined && m.vwap !== null) {
+      document.getElementById("indVwap").textContent = `$${m.vwap.toFixed(2)}`;
+      const vwapBadge = document.getElementById("indVwapBadge");
+      const isAbove = m.close >= m.vwap;
+      const vwapDist = m.vwap_distance !== undefined ? (m.vwap_distance * 100).toFixed(1) : ((m.close - m.vwap) / m.vwap * 100).toFixed(1);
+      vwapBadge.textContent = isAbove ? `Above (${vwapDist >= 0 ? "+" : ""}${vwapDist}%)` : `Below (${vwapDist}%)`;
+      vwapBadge.style.color = isAbove ? "var(--color-bullish)" : "var(--color-bearish)";
+    }
+
     document.getElementById("indVol").textContent = `${(m.volatility_20 * 100).toFixed(1)}%`;
   }
 

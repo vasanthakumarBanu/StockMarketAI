@@ -238,6 +238,13 @@ def engineer_features(df):
     # Volume volatility
     data['Volume_Volatility'] = data['Volume'].rolling(20).std()
 
+    # VWAP (Volume-Weighted Average Price - 20-period rolling)
+    typical_price = (data['High'] + data['Low'] + data['Close']) / 3.0
+    cum_vol_price = (typical_price * data['Volume']).rolling(20).sum()
+    cum_vol = data['Volume'].rolling(20).sum()
+    data['VWAP'] = cum_vol_price / (cum_vol + 1e-9)
+    data['VWAP_Distance'] = (data['Close'] - data['VWAP']) / (data['VWAP'] + 1e-9)
+
     # ==================== LAG FEATURES ====================
     # Lag OHLCV (1, 2, 3 periods)
     for lag in [1, 2, 3]:

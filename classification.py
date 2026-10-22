@@ -89,6 +89,13 @@ def engineer_17_features(raw_df: pd.DataFrame) -> pd.DataFrame:
     df["BB_Upper"] = df["BB_Middle"] + (bb_std * 2)
     df["BB_Lower"] = df["BB_Middle"] - (bb_std * 2)
 
+    # 6. VWAP (Volume-Weighted Average Price - 20-period rolling)
+    typical_price = (df["High"] + df["Low"] + df["Close"]) / 3.0
+    cum_vol_price = (typical_price * df["Volume"]).rolling(20).sum()
+    cum_vol = df["Volume"].rolling(20).sum()
+    df["VWAP"] = cum_vol_price / (cum_vol + 1e-9)
+    df["VWAP_Distance"] = (df["Close"] - df["VWAP"]) / (df["VWAP"] + 1e-9)
+
     return df
 
 
@@ -145,18 +152,19 @@ def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str
     print(f"   - Class 0 (Down / Neutral): {(1.0 - target_mean) * 100:.1f}%")
     print(f"   - Class 1 (Up):             {target_mean * 100:.1f}%")
 
-    # Standard 17 feature columns matching the quantitative system
-    expected_17 = [
+    # Standard feature columns matching the quantitative system (including VWAP)
+    expected_features = [
         "Close", "High", "Low", "Open", "Volume",
         "Daily_Return", "Volatility_20",
         "MA_20", "MA_50", "MA_200",
         "RSI_14",
         "MACD", "MACD_Signal", "MACD_Hist",
-        "BB_Middle", "BB_Upper", "BB_Lower"
+        "BB_Middle", "BB_Upper", "BB_Lower",
+        "VWAP", "VWAP_Distance"
     ]
 
-    if all(col in df.columns for col in expected_17):
-        feature_columns = expected_17
+    if all(col in df.columns for col in expected_features):
+        feature_columns = expected_features
     else:
         exclude_cols = {"Target", "Tomorrow_Open", "Tomorrow_High", "Tomorrow_Low", "Tomorrow_Close"}
         feature_columns = [col for col in df.columns if col not in exclude_cols]

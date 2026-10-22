@@ -30,6 +30,8 @@ class CurrentMarketInfo(BaseModel):
     macd_signal: float = Field(..., example=0.98)
     ma_20: float = Field(..., example=510.4)
     ma_50: float = Field(..., example=498.2)
+    vwap: Optional[float] = Field(None, example=516.45)
+    vwap_distance: Optional[float] = Field(None, example=-0.0047)
 
 
 class Level1DirectionInfo(BaseModel):

@@ -202,6 +202,8 @@ class StockMarketAIService:
         # ATR calculation for risk stops
         atr = float(latest_row["ATR_14"]) if "ATR_14" in latest_row and not np.isnan(latest_row["ATR_14"]) else float(today_close * 0.02)
         volatility_20 = float(latest_row["Volatility_20"]) if "Volatility_20" in latest_row and not np.isnan(latest_row["Volatility_20"]) else 0.015
+        vwap = float(latest_row["VWAP"]) if "VWAP" in latest_row and not np.isnan(latest_row["VWAP"]) else today_close
+        vwap_distance = float(latest_row["VWAP_Distance"]) if "VWAP_Distance" in latest_row and not np.isnan(latest_row["VWAP_Distance"]) else ((today_close - vwap) / (vwap + 1e-9))
 
         # Sentiment Analysis
         sentiment_score = 0.0
@@ -323,6 +325,11 @@ class StockMarketAIService:
         else:
             signal = "HOLD"
 
+        # VWAP confirmation bias (institutional price level)
+        is_above_vwap = today_close >= vwap
+        if (signal in ["BUY", "STRONG BUY"] and is_above_vwap) or (signal in ["SELL", "STRONG SELL"] and not is_above_vwap):
+            signal_confidence = min(signal_confidence * 1.05, 0.99)
+
         # Stop-loss and take-profit targets based on ATR
         if signal in ["BUY", "STRONG BUY"]:
             stop_loss = round(today_close - 1.5 * atr, 2)
@@ -367,6 +374,8 @@ class StockMarketAIService:
                 "macd_signal": round(macd_signal, 3),
                 "ma_20": round(ma_20, 2),
                 "ma_50": round(ma_50, 2),
+                "vwap": round(vwap, 2),
+                "vwap_distance": round(vwap_distance, 4),
             },
             "level1_direction": {
                 "prediction": "UP" if direction_pred == 1 else "DOWN",
@@ -560,6 +569,7 @@ class StockMarketAIService:
                     "stop_loss": pred["level3_trading_signal"]["stop_loss_price"],
                     "take_profit": pred["level3_trading_signal"]["take_profit_price"],
                     "rsi": pred["current_market"]["rsi_14"],
+                    "vwap": pred["current_market"].get("vwap", pred["current_market"]["close"]),
                     "sentiment": pred["sentiment"]["sentiment_label"]
                 })
             except Exception as e:

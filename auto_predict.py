@@ -146,14 +146,22 @@ def engineer_features(df):
     data['BB_Upper'] = data['BB_Middle'] + (bb_std * 2)
     data['BB_Lower'] = data['BB_Middle'] - (bb_std * 2)
 
-    # 17 standard feature columns
+    # 6. VWAP (Volume-Weighted Average Price - 20-period rolling)
+    typical_price = (data['High'] + data['Low'] + data['Close']) / 3.0
+    cum_vol_price = (typical_price * data['Volume']).rolling(20).sum()
+    cum_vol = data['Volume'].rolling(20).sum()
+    data['VWAP'] = cum_vol_price / (cum_vol + 1e-9)
+    data['VWAP_Distance'] = (data['Close'] - data['VWAP']) / (data['VWAP'] + 1e-9)
+
+    # 19 standard feature columns (including VWAP & VWAP_Distance)
     feature_columns = [
         'Close', 'High', 'Low', 'Open', 'Volume',
         'Daily_Return', 'Volatility_20',
         'MA_20', 'MA_50', 'MA_200',
         'RSI_14',
         'MACD', 'MACD_Signal', 'MACD_Hist',
-        'BB_Middle', 'BB_Upper', 'BB_Lower'
+        'BB_Middle', 'BB_Upper', 'BB_Lower',
+        'VWAP', 'VWAP_Distance'
     ]
 
     featured_data = data[feature_columns].copy()
@@ -305,11 +313,15 @@ def predict_ohlc(symbol, featured_data=None, raw_df=None, model_dir="models_regr
         predicted_close = predictions['Tomorrow_Close']
         change = predicted_close - today_close
         pct_change = (change / (today_close + 1e-9)) * 100
+        vwap_val = float(featured_data['VWAP'].iloc[-1]) if 'VWAP' in featured_data.columns else today_close
+        vwap_dist = float(featured_data['VWAP_Distance'].iloc[-1]) if 'VWAP_Distance' in featured_data.columns else 0.0
 
         return {
             'symbol': clean_symbol,
             'prediction_date': latest_date.strftime('%Y-%m-%d') if hasattr(latest_date, 'strftime') else str(latest_date),
             'today_close': today_close,
+            'vwap': vwap_val,
+            'vwap_distance': vwap_dist,
             'tomorrow_open': predictions['Tomorrow_Open'],
             'tomorrow_high': predictions['Tomorrow_High'],
             'tomorrow_low': predictions['Tomorrow_Low'],
@@ -406,6 +418,11 @@ def print_prediction_report(results, mode="both"):
             print("\n[LEVEL 2] PRICE TARGET FORECAST (OHLC Regression)")
             print(f"   Forecast Date:          {o['prediction_date']}")
             print(f"   Today's Close:          ${o['today_close']:.2f}")
+            if 'vwap' in o:
+                vwap_val = o['vwap']
+                vwap_dist = o.get('vwap_distance', 0) * 100
+                vwap_bias = "Above VWAP (Institutional Support)" if o['today_close'] >= vwap_val else "Below VWAP (Institutional Resistance)"
+                print(f"   20-Day VWAP:            ${vwap_val:.2f} ({vwap_dist:+.2f}% | {vwap_bias})")
             print(f"   Tomorrow's Open:        ${o['tomorrow_open']:.2f}")
             print(f"   Tomorrow's High:        ${o['tomorrow_high']:.2f}")
             print(f"   Tomorrow's Low:         ${o['tomorrow_low']:.2f}")
