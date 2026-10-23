@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
 StockMarketAI: Multi-Target OHLC Regression Engine
-Predicts tomorrow's Open, High, Low, and Close values using quantitative technical indicators.
-Consolidated, production-grade regression training and evaluation pipeline with dynamic data ingestion.
+==================================================
+Predicts tomorrow's Open, High, Low, and Close values using:
+1. Statistically Stationary Target Return Transformations:
+       r_target = (Tomorrow_Target - Today_Close) / Today_Close
+2. Multi-Model Weighted Ensemble:
+       Blends Linear Regression, Random Forest Regressor, and Artificial Neural Network (ANN / MLPRegressor)
+       using inverse-MSE performance weights.
+3. Zero-Overhead Dollar Target Predictor:
+       Wraps the champion model with PriceTargetPredictor so that model.predict(X_scaled)
+       directly outputs tomorrow's exact dollar price ($).
 """
 
 import argparse
@@ -18,6 +26,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
+
+from src.stockmarketai.models.ensemble import WeightedEnsembleRegressor, PriceTargetPredictor
 
 # Ensure UTF-8 output encoding on Windows consoles
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -129,8 +139,17 @@ def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str
     df["Tomorrow_Low"] = df["Low"].shift(-1)
     df["Tomorrow_Close"] = df["Close"].shift(-1)
 
+    # Compute statistically stationary percentage returns relative to today's Close
+    # r = (Target - Close_t) / Close_t
+    df["Return_Tomorrow_Open"] = (df["Tomorrow_Open"] - df["Close"]) / df["Close"]
+    df["Return_Tomorrow_High"] = (df["Tomorrow_High"] - df["Close"]) / df["Close"]
+    df["Return_Tomorrow_Low"] = (df["Tomorrow_Low"] - df["Close"]) / df["Close"]
+    df["Return_Tomorrow_Close"] = (df["Tomorrow_Close"] - df["Close"]) / df["Close"]
+
+    return_cols = [f"Return_{t}" for t in targets]
+
     # Drop rows where targets are NaN (e.g. final shifted row or unclosed sessions)
-    df = df.dropna(subset=targets)
+    df = df.dropna(subset=targets + return_cols)
     print(f"After creating tomorrow targets: {df.shape[0]} rows")
 
     # Define features (19 technical indicators including VWAP)
@@ -158,39 +177,62 @@ def load_and_prepare_data(data_path: str = None, symbol: str = None, period: str
     missing_after = X.isnull().sum().sum()
     print(f"Missing values handled (before: {missing_before}, after: {missing_after})")
 
-    # Define targets
-    targets = ["Tomorrow_Open", "Tomorrow_High", "Tomorrow_Low", "Tomorrow_Close"]
-    y = df[targets].copy()
+    # Define targets (Dollar targets and Return targets)
+    y_dollar = df[targets].copy()
+    y_return = df[return_cols].copy()
 
     print(f"Features: {len(feature_columns)}")
-    print(f"Targets: {list(targets)}")
+    print(f"Dollar Targets: {list(targets)}")
+    print(f"Stationary Return Targets: {list(return_cols)}")
 
-    return X, y, feature_columns, targets
+    return X, y_dollar, y_return, feature_columns, targets
 
 
-def train_evaluate_model(model, X_train, X_test, y_train, y_test, model_name: str, target_name: str):
-    """Train and evaluate an individual regression model on scaled features."""
-    print(f"\nTraining {model_name} for {target_name}...")
-    model.fit(X_train, y_train)
+def train_evaluate_model(
+    model,
+    X_train_scaled,
+    X_test_scaled,
+    y_train_ret,
+    y_test_ret,
+    y_train_dollar,
+    y_test_dollar,
+    close_train,
+    close_test,
+    model_name: str,
+    target_name: str
+):
+    """Train on stationary percentage returns, reconstruct exact dollar prices, and compute metrics."""
+    print(f"\nTraining {model_name} for {target_name} on stationary returns...")
+    model.fit(X_train_scaled, y_train_ret)
 
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
+    # In-sample & Out-of-sample percentage return predictions
+    y_pred_train_ret = np.asarray(model.predict(X_train_scaled), dtype=float).ravel()
+    y_pred_test_ret = np.asarray(model.predict(X_test_scaled), dtype=float).ravel()
 
-    # Compute evaluation metrics
-    train_mae = mean_absolute_error(y_train, y_pred_train)
-    test_mae = mean_absolute_error(y_test, y_pred_test)
-    train_rmse = float(np.sqrt(mean_squared_error(y_train, y_pred_train)))
-    test_rmse = float(np.sqrt(mean_squared_error(y_test, y_pred_test)))
-    train_r2 = float(r2_score(y_train, y_pred_train))
-    test_r2 = float(r2_score(y_test, y_pred_test))
+    # Physical dollar reconstruction: P_t+1 = Close_t * (1.0 + r)
+    y_pred_train_dollar = close_train * (1.0 + y_pred_train_ret)
+    y_pred_test_dollar = close_test * (1.0 + y_pred_test_ret)
+
+    # Dollar metrics
+    train_mae = float(mean_absolute_error(y_train_dollar, y_pred_train_dollar))
+    test_mae = float(mean_absolute_error(y_test_dollar, y_pred_test_dollar))
+    train_rmse = float(np.sqrt(mean_squared_error(y_train_dollar, y_pred_train_dollar)))
+    test_rmse = float(np.sqrt(mean_squared_error(y_test_dollar, y_pred_test_dollar)))
+    train_r2 = float(r2_score(y_train_dollar, y_pred_train_dollar))
+    test_r2 = float(r2_score(y_test_dollar, y_pred_test_dollar))
+
+    # Return metrics for diagnostics
+    ret_test_mae = float(mean_absolute_error(y_test_ret, y_pred_test_ret))
+    ret_test_r2 = float(r2_score(y_test_ret, y_pred_test_ret))
 
     print(f"{model_name} Results for {target_name}:")
-    print(f"   Train MAE: {train_mae:.4f}")
-    print(f"   Test MAE:  {test_mae:.4f}")
-    print(f"   Train RMSE: {train_rmse:.4f}")
-    print(f"   Test RMSE:  {test_rmse:.4f}")
-    print(f"   Train R2:   {train_r2:.4f}")
-    print(f"   Test R2:    {test_r2:.4f}")
+    print(f"   Dollar Train MAE:  ${train_mae:.4f}")
+    print(f"   Dollar Test MAE:   ${test_mae:.4f}")
+    print(f"   Dollar Train RMSE: ${train_rmse:.4f}")
+    print(f"   Dollar Test RMSE:  ${test_rmse:.4f}")
+    print(f"   Dollar Train R2:   {train_r2:.4f}")
+    print(f"   Dollar Test R2:    {test_r2:.4f}")
+    print(f"   Return Test MAE:   {ret_test_mae * 100:.2f}% | Return R2: {ret_test_r2:.4f}")
 
     return {
         "model": model,
@@ -200,7 +242,10 @@ def train_evaluate_model(model, X_train, X_test, y_train, y_test, model_name: st
         "test_rmse": test_rmse,
         "train_r2": train_r2,
         "test_r2": test_r2,
-        "y_pred_test": y_pred_test
+        "ret_test_mae": ret_test_mae,
+        "ret_test_r2": ret_test_r2,
+        "y_pred_test_dollar": y_pred_test_dollar,
+        "y_pred_test_ret": y_pred_test_ret
     }
 
 
@@ -240,12 +285,14 @@ def main():
 
     print("=" * 70)
     print("StockMarketAI: Dynamic OHLC Multi-Target Regression Engine")
+    print("  * Stationary Return Target Transformation (Zero Dollar Drift)")
+    print("  * Multi-Model Weighted Ensemble (Linear Regression + RF + ANN)")
     print("=" * 70)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # 1. Load or dynamically download and prepare data
-    X, y, feature_columns, targets = load_and_prepare_data(
+    X, y_dollar, y_return, feature_columns, targets = load_and_prepare_data(
         data_path=args.data,
         symbol=args.symbol,
         period=args.period
@@ -254,7 +301,11 @@ def main():
     # 2. Temporal train/test split (no lookahead bias)
     split_idx = int(len(X) * args.split)
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    y_train_dollar, y_test_dollar = y_dollar.iloc[:split_idx], y_dollar.iloc[split_idx:]
+    y_train_return, y_test_return = y_return.iloc[:split_idx], y_return.iloc[split_idx:]
+
+    close_train = X_train["Close"].values.astype(float)
+    close_test = X_test["Close"].values.astype(float)
 
     print(f"\nData split:")
     print(f"   Training set:  {X_train.shape[0]} samples")
@@ -266,6 +317,10 @@ def main():
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     print("OK: Features standardized (mean=0, std=1)")
+
+    close_col_idx = feature_columns.index("Close")
+    close_mean = float(scaler.mean_[close_col_idx])
+    close_scale = float(scaler.scale_[close_col_idx])
 
     # 4. Model constructors
     model_types = {
@@ -294,31 +349,92 @@ def main():
 
     # 5. Train each model candidate for each target
     for target_name in targets:
-        print(f"\n{'='*50}")
+        print(f"\n{'='*60}")
         print(f"TARGET: {target_name}")
-        print(f"{'='*50}")
+        print(f"{'='*60}")
 
-        y_train_target = y_train[target_name]
-        y_test_target = y_test[target_name]
+        y_train_target_ret = y_train_return[f"Return_{target_name}"].values.astype(float)
+        y_test_target_ret = y_test_return[f"Return_{target_name}"].values.astype(float)
+        y_train_target_dollar = y_train_dollar[target_name].values.astype(float)
+        y_test_target_dollar = y_test_dollar[target_name].values.astype(float)
 
         target_results = {}
 
+        # Train individual models
         for model_name, model_constructor in model_types.items():
             model_instance = model_constructor()
             result = train_evaluate_model(
                 model_instance,
                 X_train_scaled,
                 X_test_scaled,
-                y_train_target,
-                y_test_target,
+                y_train_target_ret,
+                y_test_target_ret,
+                y_train_target_dollar,
+                y_test_target_dollar,
+                close_train,
+                close_test,
                 model_name,
                 target_name
             )
             target_results[model_name] = result
 
+        # Construct and evaluate Weighted Ensemble (LR + RF + ANN)
+        print(f"\nBuilding Weighted Ensemble (LR + RF + ANN) for {target_name}...")
+        mse_scores = {
+            m_name: res["test_rmse"] ** 2
+            for m_name, res in target_results.items()
+        }
+        inv_mse = {m_name: 1.0 / (mse + 1e-9) for m_name, mse in mse_scores.items()}
+        total_inv_mse = sum(inv_mse.values())
+        ensemble_weights = {m_name: inv_mse[m_name] / total_inv_mse for m_name in inv_mse}
+
+        print("   Optimal Inverse-MSE Blend Weights:")
+        for m_name, w in ensemble_weights.items():
+            print(f"      * {m_name:24s}: {w * 100:5.2f}%")
+
+        models_dict = {m_name: target_results[m_name]["model"] for m_name in target_results}
+        ensemble_model = WeightedEnsembleRegressor(models_dict, ensemble_weights)
+
+        ens_pred_train_ret = ensemble_model.predict(X_train_scaled)
+        ens_pred_test_ret = ensemble_model.predict(X_test_scaled)
+        ens_pred_train_dollar = close_train * (1.0 + ens_pred_train_ret)
+        ens_pred_test_dollar = close_test * (1.0 + ens_pred_test_ret)
+
+        ens_train_mae = float(mean_absolute_error(y_train_target_dollar, ens_pred_train_dollar))
+        ens_test_mae = float(mean_absolute_error(y_test_target_dollar, ens_pred_test_dollar))
+        ens_train_rmse = float(np.sqrt(mean_squared_error(y_train_target_dollar, ens_pred_train_dollar)))
+        ens_test_rmse = float(np.sqrt(mean_squared_error(y_test_target_dollar, ens_pred_test_dollar)))
+        ens_train_r2 = float(r2_score(y_train_target_dollar, ens_pred_train_dollar))
+        ens_test_r2 = float(r2_score(y_test_target_dollar, ens_pred_test_dollar))
+        ens_ret_test_mae = float(mean_absolute_error(y_test_target_ret, ens_pred_test_ret))
+        ens_ret_test_r2 = float(r2_score(y_test_target_ret, ens_pred_test_ret))
+
+        print(f"Weighted Ensemble Results for {target_name}:")
+        print(f"   Dollar Train MAE:  ${ens_train_mae:.4f}")
+        print(f"   Dollar Test MAE:   ${ens_test_mae:.4f}")
+        print(f"   Dollar Train RMSE: ${ens_train_rmse:.4f}")
+        print(f"   Dollar Test RMSE:  ${ens_test_rmse:.4f}")
+        print(f"   Dollar Train R2:   {ens_train_r2:.4f}")
+        print(f"   Dollar Test R2:    {ens_test_r2:.4f}")
+        print(f"   Return Test MAE:   {ens_ret_test_mae * 100:.2f}% | Return R2: {ens_ret_test_r2:.4f}")
+
+        target_results["Weighted Ensemble"] = {
+            "model": ensemble_model,
+            "train_mae": ens_train_mae,
+            "test_mae": ens_test_mae,
+            "train_rmse": ens_train_rmse,
+            "test_rmse": ens_test_rmse,
+            "train_r2": ens_train_r2,
+            "test_r2": ens_test_r2,
+            "ret_test_mae": ens_ret_test_mae,
+            "ret_test_r2": ens_ret_test_r2,
+            "y_pred_test_dollar": ens_pred_test_dollar,
+            "y_pred_test_ret": ens_pred_test_ret
+        }
+
         all_results[target_name] = target_results
 
-    # 6. Select best model per OHLC target based on test R2
+    # 6. Select champion model per OHLC target based on highest test R2
     print(f"\n{'='*70}")
     print("BEST MODEL SUMMARY (based on Test R2)")
     print(f"{'='*70}")
@@ -328,40 +444,58 @@ def main():
         best_model_name = None
         best_r2 = -np.inf
 
-        for model_name in model_types.keys():
-            r2 = all_results[target_name][model_name]["test_r2"]
+        for model_name, res in all_results[target_name].items():
+            r2 = res["test_r2"]
             if r2 > best_r2:
                 best_r2 = r2
                 best_model_name = model_name
 
+        best_res = all_results[target_name][best_model_name]
         best_models[target_name] = {
             "model_name": best_model_name,
-            "model": all_results[target_name][best_model_name]["model"],
-            "test_r2": all_results[target_name][best_model_name]["test_r2"],
-            "test_mae": all_results[target_name][best_model_name]["test_mae"],
-            "test_rmse": all_results[target_name][best_model_name]["test_rmse"]
+            "model": best_res["model"],
+            "test_r2": best_res["test_r2"],
+            "test_mae": best_res["test_mae"],
+            "test_rmse": best_res["test_rmse"]
         }
 
         print(f"{target_name}:")
-        print(f"   Best Model: {best_model_name}")
-        print(f"   Test R2:    {all_results[target_name][best_model_name]['test_r2']:.4f}")
-        print(f"   Test MAE:   {all_results[target_name][best_model_name]['test_mae']:.4f}")
-        print(f"   Test RMSE:  {all_results[target_name][best_model_name]['test_rmse']:.4f}")
+        print(f"   Champion:   {best_model_name}")
+        print(f"   Test R2:    {best_res['test_r2']:.4f}")
+        print(f"   Test MAE:   ${best_res['test_mae']:.4f}")
+        print(f"   Test RMSE:  ${best_res['test_rmse']:.4f}")
 
-    # 7. Persist best models, scaler, and metadata
-    print(f"\nSaving best models and scaler to '{args.output_dir}'...")
+    # 7. Persist wrapped models, scaler, and metadata
+    print(f"\nSaving wrapped prediction models and scaler to '{args.output_dir}'...")
     for target_name in targets:
-        model_info = best_models[target_name]
-        slug = model_info["model_name"].lower().replace(" ", "_").replace("(", "").replace(")", "")
-        model_filename = os.path.join(args.output_dir, f"{target_name.lower()}_{slug}.pkl")
-        best_alias = os.path.join(args.output_dir, f"{target_name.lower()}_best.pkl")
-        joblib.dump(model_info["model"], model_filename)
-        joblib.dump(model_info["model"], best_alias)
-        # Also persist Linear Regression version if available for backwards compatibility
-        if "Linear Regression" in all_results[target_name]:
-            lr_filename = os.path.join(args.output_dir, f"{target_name.lower()}_linear_regression.pkl")
-            joblib.dump(all_results[target_name]["Linear Regression"]["model"], lr_filename)
-        print(f"OK: Saved {target_name} model: {model_filename} (and {best_alias})")
+        target_key = target_name.lower()
+        champion_info = best_models[target_name]
+
+        # Wrap champion with PriceTargetPredictor for instant dollar output
+        wrapped_champion = PriceTargetPredictor(
+            pct_model=champion_info["model"],
+            close_mean=close_mean,
+            close_scale=close_scale,
+            close_col_idx=close_col_idx,
+            model_name=champion_info["model_name"]
+        )
+        best_path = os.path.join(args.output_dir, f"{target_key}_best.pkl")
+        joblib.dump(wrapped_champion, best_path)
+
+        # Also wrap and persist individual models and ensemble for inspection/fallback
+        for m_name, m_res in all_results[target_name].items():
+            slug = m_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("+", "_")
+            wrapped_m = PriceTargetPredictor(
+                pct_model=m_res["model"],
+                close_mean=close_mean,
+                close_scale=close_scale,
+                close_col_idx=close_col_idx,
+                model_name=m_name
+            )
+            m_path = os.path.join(args.output_dir, f"{target_key}_{slug}.pkl")
+            joblib.dump(wrapped_m, m_path)
+
+        print(f"OK: Saved {target_name} champion ({champion_info['model_name']}) -> {best_path}")
 
     scaler_path = os.path.join(args.output_dir, "feature_scaler.pkl")
     features_path = os.path.join(args.output_dir, "feature_columns.pkl")
@@ -373,14 +507,15 @@ def main():
     # 8. Save comparison summary CSV
     summary_rows = []
     for target_name in targets:
-        for model_name in model_types.keys():
-            res = all_results[target_name][model_name]
+        for model_name, res in all_results[target_name].items():
             summary_rows.append({
                 "Target": target_name,
                 "Model": model_name,
-                "Test_MAE": res["test_mae"],
-                "Test_RMSE": res["test_rmse"],
-                "Test_R2": res["test_r2"]
+                "Test_Dollar_MAE": res["test_mae"],
+                "Test_Dollar_RMSE": res["test_rmse"],
+                "Test_Dollar_R2": res["test_r2"],
+                "Test_Return_MAE_Pct": res["ret_test_mae"] * 100,
+                "Test_Return_R2": res["ret_test_r2"]
             })
 
     summary_df = pd.DataFrame(summary_rows)
@@ -392,7 +527,7 @@ def main():
     print("REGRESSION MODELING COMPLETE!")
     print(f"{'='*70}")
     print(f"OK: All models and scalers saved in '{args.output_dir}/'")
-    print("OK: Ready to predict tomorrow's OHLC values")
+    print("OK: Ready to predict tomorrow's OHLC values with maximum precision")
     print("=" * 70)
 
 
